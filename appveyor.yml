@@ -1,0 +1,13 @@
+version: 1.0.{build}
+image: Visual Studio 2022
+configuration:
+- Debug
+- Release
+platform: Any CPU
+before_build:
+- cmd: dotnet restore
+build:
+  verbosity: minimal
+artifacts:
+- path: SpellWork\bin
+  name: SpellWork
