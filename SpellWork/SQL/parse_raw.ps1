@@ -142,7 +142,7 @@ function Extract-IconMap([string]$Section) {
             continue
         }
 
-        # 2. CSS background-image url – handles &quot;, ", ', no-quote, http/https/protocol-relative
+        # 2. CSS background-image url ï¿½ handles &quot;, ", ', no-quote, http/https/protocol-relative
         if ($innerHtml -match 'url\((?:&quot;|''|"|)?(?:https?:)?//wow\.zamimg\.com/images/wow/icons/large/([^&''"\.\)\s]+\.jpg)(?:&quot;|''|")?') {
             $map[$cellId] = $Matches[1]
             continue
@@ -481,7 +481,7 @@ function Build-Sql(
     $parts = [System.Collections.Generic.List[string]]::new()
 
     if ($IncludeUse) {
-        $parts.Add("USE ``spellhell_tracker``;")
+        $parts.Add("USE ``spellforge_tracker``;")
         $parts.Add("")
     }
 
@@ -589,7 +589,7 @@ if ($allSqlBlocks.Count -gt 0) {
                     [Environment]::NewLine +
                     "-- Contains all classes/specs/heroes processed in this run." +
                     [Environment]::NewLine + [Environment]::NewLine +
-                    "USE ``spellhell_tracker``;" + [Environment]::NewLine + [Environment]::NewLine
+                    "USE ``spellforge_tracker``;" + [Environment]::NewLine + [Environment]::NewLine
     $combined = $masterHeader + ($allSqlBlocks -join ([Environment]::NewLine + [Environment]::NewLine))
     $outPath  = Join-Path $ScriptDir 'all_talents.sql'
     [System.IO.File]::WriteAllText($outPath, $combined + [Environment]::NewLine, [System.Text.Encoding]::UTF8)

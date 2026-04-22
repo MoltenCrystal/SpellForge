@@ -3,14 +3,14 @@
     sealed partial class FormMain
     {
         /// <summary>
-        /// Требуется переменная конструктора.
+        /// ????????? ?????????? ????????????.
         /// </summary>
         private System.ComponentModel.IContainer components = null;
 
         /// <summary>
-        /// Освободить все используемые ресурсы.
+        /// ?????????? ??? ???????????? ???????.
         /// </summary>
-        /// <param name="disposing">истинно, если управляемый ресурс должен быть удален; иначе ложно.</param>
+        /// <param name="disposing">???????, ???? ??????????? ?????? ?????? ???? ??????; ????? ?????.</param>
         protected override void Dispose(bool disposing)
         {
             if (disposing && (components != null))
@@ -21,8 +21,8 @@
         }
 
         /// <summary>
-        /// Обязательный метод для поддержки конструктора - не изменяйте
-        /// содержимое данного метода при помощи редактора кода.
+        /// ???????????? ????? ??? ????????? ???????????? - ?? ?????????
+        /// ?????????? ??????? ?????? ??? ?????? ????????? ????.
         /// </summary>
         private void InitializeComponent()
         {
@@ -37,6 +37,8 @@
             _tsmSettings = new System.Windows.Forms.ToolStripMenuItem();
             _tsmExtractEnums = new System.Windows.Forms.ToolStripMenuItem();
             _tsmExit = new System.Windows.Forms.ToolStripMenuItem();
+            _tsmTools = new System.Windows.Forms.ToolStripMenuItem();
+            _tsmImportSniff = new System.Windows.Forms.ToolStripMenuItem();
             _ilPro = new System.Windows.Forms.ImageList(components);
             splitContainer7 = new System.Windows.Forms.SplitContainer();
             splitContainer8 = new System.Windows.Forms.SplitContainer();
@@ -89,24 +91,7 @@
             _tbSearchIcon = new System.Windows.Forms.TextBox();
             _tbSearchId = new System.Windows.Forms.TextBox();
             tabControl1 = new System.Windows.Forms.TabControl();
-            _tpSpellHellParser = new System.Windows.Forms.TabPage();
-            _scHellParserLists = new System.Windows.Forms.SplitContainer();
-            _lvSpellHellParserList = new System.Windows.Forms.ListView();
-            _chHellParserSpellID = new System.Windows.Forms.ColumnHeader();
-            _chHellParserSpellName = new System.Windows.Forms.ColumnHeader();
-            _lblKnownSpells = new System.Windows.Forms.Label();
-            _lvSpellHellParserCastedList = new System.Windows.Forms.ListView();
-            _chHellParserCastedSpellID = new System.Windows.Forms.ColumnHeader();
-            _chHellParserCastedSpellName = new System.Windows.Forms.ColumnHeader();
-            _chHellParserCastedFromBy = new System.Windows.Forms.ColumnHeader();
-            _lblCastedSpells = new System.Windows.Forms.Label();
-            _rtbSpellHellParser = new System.Windows.Forms.RichTextBox();
-            _rtbSpellHellParserRefs = new System.Windows.Forms.RichTextBox();
-            _bSpellHellParserParse = new System.Windows.Forms.Button();
-            _bSpellHellParserBrowse = new System.Windows.Forms.Button();
-            _tbSpellHellParserInput = new System.Windows.Forms.TextBox();
-            _lblSpellHellParserInput = new System.Windows.Forms.Label();
-            _tpSpellHellTracker = new System.Windows.Forms.TabPage();
+            _tpSpellForgeTracker = new System.Windows.Forms.TabPage();
             _tpSpellProcInfo = new System.Windows.Forms.TabPage();
             splitContainer2 = new System.Windows.Forms.SplitContainer();
             splitContainer3 = new System.Windows.Forms.SplitContainer();
@@ -229,11 +214,6 @@
             _gbAdvansedSearch.SuspendLayout();
             groupBox7.SuspendLayout();
             tabControl1.SuspendLayout();
-            _tpSpellHellParser.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)_scHellParserLists).BeginInit();
-            _scHellParserLists.Panel1.SuspendLayout();
-            _scHellParserLists.Panel2.SuspendLayout();
-            _scHellParserLists.SuspendLayout();
             _tpSpellProcInfo.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)splitContainer2).BeginInit();
             splitContainer2.Panel1.SuspendLayout();
@@ -294,7 +274,7 @@
             // 
             // menuStrip1
             // 
-            menuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] { _tsmFile });
+            menuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] { _tsmFile, _tsmTools });
             menuStrip1.Location = new System.Drawing.Point(0, 0);
             menuStrip1.Name = "menuStrip1";
             menuStrip1.Padding = new System.Windows.Forms.Padding(7, 2, 0, 2);
@@ -328,6 +308,20 @@
             _tsmExit.Name = "_tsmExit";
             _tsmExit.Size = new System.Drawing.Size(116, 22);
             _tsmExit.Text = "Exit";
+            // 
+            // _tsmTools
+            // 
+            _tsmTools.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { _tsmImportSniff });
+            _tsmTools.Name = "_tsmTools";
+            _tsmTools.Size = new System.Drawing.Size(46, 20);
+            _tsmTools.Text = "Tools";
+            // 
+            // _tsmImportSniff
+            // 
+            _tsmImportSniff.Name = "_tsmImportSniff";
+            _tsmImportSniff.Size = new System.Drawing.Size(160, 22);
+            _tsmImportSniff.Text = "Import sniff...";
+            _tsmImportSniff.Click += TsmImportSniffClick;
             _tsmExit.Click += ExitClick;
             // 
             // _ilPro
@@ -530,7 +524,7 @@
             _tpSpellInfo.Name = "_tpSpellInfo";
             _tpSpellInfo.Padding = new System.Windows.Forms.Padding(4, 3, 4, 3);
             _tpSpellInfo.Size = new System.Drawing.Size(1376, 827);
-            _tpSpellInfo.TabIndex = 0;
+            _tpSpellInfo.TabIndex = 1;
             _tpSpellInfo.Text = "Spell Info";
             _tpSpellInfo.UseVisualStyleBackColor = true;
             // 
@@ -990,8 +984,7 @@
             // 
             // tabControl1
             // 
-            tabControl1.Controls.Add(_tpSpellHellParser);
-            tabControl1.Controls.Add(_tpSpellHellTracker);
+            tabControl1.Controls.Add(_tpSpellForgeTracker);
             tabControl1.Controls.Add(_tpSpellInfo);
             tabControl1.Controls.Add(_tpSpellProcInfo);
             tabControl1.Controls.Add(_tpSpellProcDB);
@@ -1006,210 +999,16 @@
             tabControl1.TabIndex = 2;
             tabControl1.SelectedIndexChanged += TabControl1SelectedIndexChanged;
             // 
-            // _tpSpellHellParser
+            // _tpSpellForgeTracker
             // 
-            _tpSpellHellParser.Controls.Add(_scHellParserLists);
-            _tpSpellHellParser.Controls.Add(_rtbSpellHellParser);
-            _tpSpellHellParser.Controls.Add(_rtbSpellHellParserRefs);
-            _tpSpellHellParser.Controls.Add(_bSpellHellParserParse);
-            _tpSpellHellParser.Controls.Add(_bSpellHellParserBrowse);
-            _tpSpellHellParser.Controls.Add(_tbSpellHellParserInput);
-            _tpSpellHellParser.Controls.Add(_lblSpellHellParserInput);
-            _tpSpellHellParser.Location = new System.Drawing.Point(4, 24);
-            _tpSpellHellParser.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _tpSpellHellParser.Name = "_tpSpellHellParser";
-            _tpSpellHellParser.Padding = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _tpSpellHellParser.Size = new System.Drawing.Size(1376, 857);
-            _tpSpellHellParser.TabIndex = 6;
-            _tpSpellHellParser.Text = "SpellHell Parser";
-            _tpSpellHellParser.UseVisualStyleBackColor = true;
-            // 
-            // _scHellParserLists
-            // 
-            _scHellParserLists.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left;
-            _scHellParserLists.Location = new System.Drawing.Point(4, 38);
-            _scHellParserLists.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _scHellParserLists.Name = "_scHellParserLists";
-            _scHellParserLists.Orientation = System.Windows.Forms.Orientation.Horizontal;
-            // 
-            // _scHellParserLists.Panel1
-            // 
-            _scHellParserLists.Panel1.Controls.Add(_lvSpellHellParserList);
-            _scHellParserLists.Panel1.Controls.Add(_lblKnownSpells);
-            // 
-            // _scHellParserLists.Panel2
-            // 
-            _scHellParserLists.Panel2.Controls.Add(_lvSpellHellParserCastedList);
-            _scHellParserLists.Panel2.Controls.Add(_lblCastedSpells);
-            _scHellParserLists.Size = new System.Drawing.Size(286, 816);
-            _scHellParserLists.SplitterDistance = 404;
-            _scHellParserLists.SplitterWidth = 5;
-            _scHellParserLists.TabIndex = 6;
-            // 
-            // _lvSpellHellParserList
-            // 
-            _lvSpellHellParserList.AllowColumnReorder = true;
-            _lvSpellHellParserList.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
-            _lvSpellHellParserList.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] { _chHellParserSpellID, _chHellParserSpellName });
-            _lvSpellHellParserList.FullRowSelect = true;
-            _lvSpellHellParserList.GridLines = true;
-            _lvSpellHellParserList.Location = new System.Drawing.Point(0, 16);
-            _lvSpellHellParserList.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _lvSpellHellParserList.MultiSelect = false;
-            _lvSpellHellParserList.Name = "_lvSpellHellParserList";
-            _lvSpellHellParserList.Size = new System.Drawing.Size(286, 388);
-            _lvSpellHellParserList.TabIndex = 4;
-            _lvSpellHellParserList.UseCompatibleStateImageBehavior = false;
-            _lvSpellHellParserList.View = System.Windows.Forms.View.Details;
-            _lvSpellHellParserList.VirtualMode = true;
-            _lvSpellHellParserList.RetrieveVirtualItem += LvSpellHellParserListRetrieveVirtualItem;
-            _lvSpellHellParserList.SelectedIndexChanged += LvSpellHellParserListSelectedIndexChanged;
-            // 
-            // _chHellParserSpellID
-            // 
-            _chHellParserSpellID.Text = "ID";
-            _chHellParserSpellID.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            _chHellParserSpellID.Width = 64;
-            // 
-            // _chHellParserSpellName
-            // 
-            _chHellParserSpellName.Text = "Name";
-            _chHellParserSpellName.Width = 200;
-            // 
-            // _lblKnownSpells
-            // 
-            _lblKnownSpells.AutoSize = true;
-            _lblKnownSpells.Font = new System.Drawing.Font("Microsoft Sans Serif", 8F, System.Drawing.FontStyle.Bold);
-            _lblKnownSpells.Location = new System.Drawing.Point(0, 0);
-            _lblKnownSpells.Name = "_lblKnownSpells";
-            _lblKnownSpells.Size = new System.Drawing.Size(83, 13);
-            _lblKnownSpells.TabIndex = 1;
-            _lblKnownSpells.Text = "Known Spells";
-            // 
-            // _lvSpellHellParserCastedList
-            // 
-            _lvSpellHellParserCastedList.AllowColumnReorder = true;
-            _lvSpellHellParserCastedList.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
-            _lvSpellHellParserCastedList.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] { _chHellParserCastedSpellID, _chHellParserCastedSpellName, _chHellParserCastedFromBy });
-            _lvSpellHellParserCastedList.FullRowSelect = true;
-            _lvSpellHellParserCastedList.GridLines = true;
-            _lvSpellHellParserCastedList.Location = new System.Drawing.Point(0, 16);
-            _lvSpellHellParserCastedList.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _lvSpellHellParserCastedList.MultiSelect = false;
-            _lvSpellHellParserCastedList.Name = "_lvSpellHellParserCastedList";
-            _lvSpellHellParserCastedList.Size = new System.Drawing.Size(286, 385);
-            _lvSpellHellParserCastedList.TabIndex = 5;
-            _lvSpellHellParserCastedList.UseCompatibleStateImageBehavior = false;
-            _lvSpellHellParserCastedList.View = System.Windows.Forms.View.Details;
-            _lvSpellHellParserCastedList.VirtualMode = true;
-            _lvSpellHellParserCastedList.RetrieveVirtualItem += LvSpellHellParserCastedListRetrieveVirtualItem;
-            _lvSpellHellParserCastedList.SelectedIndexChanged += LvSpellHellParserCastedListSelectedIndexChanged;
-            // 
-            // _chHellParserCastedSpellID
-            // 
-            _chHellParserCastedSpellID.Text = "ID";
-            _chHellParserCastedSpellID.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            _chHellParserCastedSpellID.Width = 64;
-            // 
-            // _chHellParserCastedSpellName
-            // 
-            _chHellParserCastedSpellName.Text = "Name";
-            _chHellParserCastedSpellName.Width = 200;
-            // 
-            // _chHellParserCastedFromBy
-            // 
-            _chHellParserCastedFromBy.Text = "Casted from/by";
-            _chHellParserCastedFromBy.Width = 160;
-            // 
-            // _lblCastedSpells
-            // 
-            _lblCastedSpells.AutoSize = true;
-            _lblCastedSpells.Font = new System.Drawing.Font("Microsoft Sans Serif", 8F, System.Drawing.FontStyle.Bold);
-            _lblCastedSpells.Location = new System.Drawing.Point(0, 0);
-            _lblCastedSpells.Name = "_lblCastedSpells";
-            _lblCastedSpells.Size = new System.Drawing.Size(84, 13);
-            _lblCastedSpells.TabIndex = 1;
-            _lblCastedSpells.Text = "Casted Spells";
-            // 
-            // _rtbSpellHellParser
-            // 
-            _rtbSpellHellParser.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
-            _rtbSpellHellParser.BackColor = System.Drawing.Color.Gainsboro;
-            _rtbSpellHellParser.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F);
-            _rtbSpellHellParser.Location = new System.Drawing.Point(298, 38);
-            _rtbSpellHellParser.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _rtbSpellHellParser.Name = "_rtbSpellHellParser";
-            _rtbSpellHellParser.ReadOnly = true;
-            _rtbSpellHellParser.Size = new System.Drawing.Size(700, 816);
-            _rtbSpellHellParser.TabIndex = 3;
-            _rtbSpellHellParser.Text = "";
-            // 
-            // _rtbSpellHellParserRefs
-            // 
-            _rtbSpellHellParserRefs.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right;
-            _rtbSpellHellParserRefs.BackColor = System.Drawing.Color.WhiteSmoke;
-            _rtbSpellHellParserRefs.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F);
-            _rtbSpellHellParserRefs.Location = new System.Drawing.Point(1002, 38);
-            _rtbSpellHellParserRefs.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _rtbSpellHellParserRefs.Name = "_rtbSpellHellParserRefs";
-            _rtbSpellHellParserRefs.ReadOnly = true;
-            _rtbSpellHellParserRefs.Size = new System.Drawing.Size(370, 816);
-            _rtbSpellHellParserRefs.TabIndex = 5;
-            _rtbSpellHellParserRefs.Text = "";
-            _rtbSpellHellParserRefs.WordWrap = false;
-            // 
-            // _bSpellHellParserParse
-            // 
-            _bSpellHellParserParse.Enabled = false;
-            _bSpellHellParserParse.Location = new System.Drawing.Point(555, 6);
-            _bSpellHellParserParse.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _bSpellHellParserParse.Name = "_bSpellHellParserParse";
-            _bSpellHellParserParse.Size = new System.Drawing.Size(75, 25);
-            _bSpellHellParserParse.TabIndex = 3;
-            _bSpellHellParserParse.Text = "Parse";
-            _bSpellHellParserParse.UseVisualStyleBackColor = true;
-            _bSpellHellParserParse.Click += SpellHellParserParseClick;
-            // 
-            // _bSpellHellParserBrowse
-            // 
-            _bSpellHellParserBrowse.Location = new System.Drawing.Point(492, 6);
-            _bSpellHellParserBrowse.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _bSpellHellParserBrowse.Name = "_bSpellHellParserBrowse";
-            _bSpellHellParserBrowse.Size = new System.Drawing.Size(55, 25);
-            _bSpellHellParserBrowse.TabIndex = 2;
-            _bSpellHellParserBrowse.Text = "Select";
-            _bSpellHellParserBrowse.UseVisualStyleBackColor = true;
-            _bSpellHellParserBrowse.Click += SpellHellParserBrowseClick;
-            // 
-            // _tbSpellHellParserInput
-            // 
-            _tbSpellHellParserInput.Location = new System.Drawing.Point(105, 7);
-            _tbSpellHellParserInput.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _tbSpellHellParserInput.Name = "_tbSpellHellParserInput";
-            _tbSpellHellParserInput.ReadOnly = true;
-            _tbSpellHellParserInput.Size = new System.Drawing.Size(380, 23);
-            _tbSpellHellParserInput.TabIndex = 1;
-            // 
-            // _lblSpellHellParserInput
-            // 
-            _lblSpellHellParserInput.AutoSize = true;
-            _lblSpellHellParserInput.Location = new System.Drawing.Point(7, 10);
-            _lblSpellHellParserInput.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
-            _lblSpellHellParserInput.Name = "_lblSpellHellParserInput";
-            _lblSpellHellParserInput.Size = new System.Drawing.Size(105, 15);
-            _lblSpellHellParserInput.TabIndex = 0;
-            _lblSpellHellParserInput.Text = "Select file to parse:";
-            // 
-            // _tpSpellHellTracker
-            // 
-            _tpSpellHellTracker.BackColor = System.Drawing.Color.Gray;
-            _tpSpellHellTracker.Location = new System.Drawing.Point(4, 24);
-            _tpSpellHellTracker.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _tpSpellHellTracker.Name = "_tpSpellHellTracker";
-            _tpSpellHellTracker.Padding = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            _tpSpellHellTracker.Size = new System.Drawing.Size(1376, 827);
-            _tpSpellHellTracker.TabIndex = 5;
-            _tpSpellHellTracker.Text = "SpellHell Tracker";
+            _tpSpellForgeTracker.BackColor = System.Drawing.Color.Gray;
+            _tpSpellForgeTracker.Location = new System.Drawing.Point(4, 24);
+            _tpSpellForgeTracker.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            _tpSpellForgeTracker.Name = "_tpSpellForgeTracker";
+            _tpSpellForgeTracker.Padding = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            _tpSpellForgeTracker.Size = new System.Drawing.Size(1376, 827);
+            _tpSpellForgeTracker.TabIndex = 0;
+            _tpSpellForgeTracker.Text = "Spellforge Tracker";
             // 
             // _tpSpellProcInfo
             // 
@@ -2374,14 +2173,6 @@
             groupBox7.ResumeLayout(false);
             groupBox7.PerformLayout();
             tabControl1.ResumeLayout(false);
-            _tpSpellHellParser.ResumeLayout(false);
-            _tpSpellHellParser.PerformLayout();
-            _scHellParserLists.Panel1.ResumeLayout(false);
-            _scHellParserLists.Panel1.PerformLayout();
-            _scHellParserLists.Panel2.ResumeLayout(false);
-            _scHellParserLists.Panel2.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)_scHellParserLists).EndInit();
-            _scHellParserLists.ResumeLayout(false);
             _tpSpellProcInfo.ResumeLayout(false);
             splitContainer2.Panel1.ResumeLayout(false);
             splitContainer2.Panel2.ResumeLayout(false);
@@ -2580,23 +2371,8 @@
         private System.Windows.Forms.Label _lNewProcSpellId;
         private System.Windows.Forms.ProgressBar loadingProgressBar1;
         private System.Windows.Forms.Label loadingProgressLabel1;
-        private System.Windows.Forms.TabPage _tpSpellHellTracker;
-        private System.Windows.Forms.TabPage _tpSpellHellParser;
-        private System.Windows.Forms.RichTextBox _rtbSpellHellParser;
-        private System.Windows.Forms.TextBox _tbSpellHellParserInput;
-        private System.Windows.Forms.Button _bSpellHellParserBrowse;
-        private System.Windows.Forms.Button _bSpellHellParserParse;
-        private System.Windows.Forms.Label _lblSpellHellParserInput;
-        private System.Windows.Forms.ListView _lvSpellHellParserList;
-        private System.Windows.Forms.ColumnHeader _chHellParserSpellID;
-        private System.Windows.Forms.ColumnHeader _chHellParserSpellName;
-        private System.Windows.Forms.RichTextBox _rtbSpellHellParserRefs;
-        private System.Windows.Forms.SplitContainer _scHellParserLists;
-        private System.Windows.Forms.Label _lblKnownSpells;
-        private System.Windows.Forms.Label _lblCastedSpells;
-        private System.Windows.Forms.ListView _lvSpellHellParserCastedList;
-        private System.Windows.Forms.ColumnHeader _chHellParserCastedSpellID;
-        private System.Windows.Forms.ColumnHeader _chHellParserCastedSpellName;
-        private System.Windows.Forms.ColumnHeader _chHellParserCastedFromBy;
+        private System.Windows.Forms.TabPage _tpSpellForgeTracker;
+        private System.Windows.Forms.ToolStripMenuItem _tsmTools;
+        private System.Windows.Forms.ToolStripMenuItem _tsmImportSniff;
     }
 }

@@ -12,10 +12,10 @@ using System.Linq;
 namespace SpellWork.Database
 {
     /// <summary>
-    /// Read-only access to the <c>spellhell_tracker</c> MySQL database.
+    /// Read-only access to the <c>spellforge_tracker</c> MySQL database.
     /// Schema creation and data import are handled externally via manually-run SQL files.
     /// </summary>
-    internal static class SpellHellTrackerDb
+    internal static class SpellForgeTrackerDb
     {
         // ------------------------------------------------------------------ //
         // Connection string
@@ -28,10 +28,10 @@ namespace SpellWork.Database
                 if (Settings.Default.Host == ".")
                     return $"Server=localhost;Pipe={Settings.Default.PortOrPipe};" +
                            $"UserID={Settings.Default.User};Password={Settings.Default.Pass};" +
-                           $"Database=spellhell_tracker;CharacterSet=utf8mb4;ConnectionTimeout=5;ConnectionProtocol=Pipe;";
+                           $"Database=spellforge_tracker;CharacterSet=utf8mb4;ConnectionTimeout=5;ConnectionProtocol=Pipe;";
                 return $"Server={Settings.Default.Host};Port={Settings.Default.PortOrPipe};" +
                        $"UserID={Settings.Default.User};Password={Settings.Default.Pass};" +
-                       $"Database=spellhell_tracker;CharacterSet=utf8mb4;ConnectionTimeout=5;";
+                       $"Database=spellforge_tracker;CharacterSet=utf8mb4;ConnectionTimeout=5;";
             }
         }
 
@@ -182,7 +182,7 @@ namespace SpellWork.Database
         }
 
         // ------------------------------------------------------------------ //
-        // Schema / write operations (stubs � implement as needed)
+        // Schema / write operations (stubs � implement as needed)
         // ------------------------------------------------------------------ //
 
         public sealed class SyncResult
@@ -232,6 +232,116 @@ namespace SpellWork.Database
         // ------------------------------------------------------------------ //
         // DB presence check and tree reconstruction
         // ------------------------------------------------------------------ //
+
+        /// <summary>
+        /// Tests whether the <c>spellforge_tracker</c> database is reachable.
+        /// Uses its own connection string – independent of the world-DB connection.
+        /// </summary>
+        public static bool CanConnect()
+        {
+            try
+            {
+                using var c = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
+                c.Open();
+                return true;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// Updates <c>node_name</c> in <c>talent_tree_nodes</c> and
+        /// <c>spell_name</c> in <c>talent_spells</c> for every row whose
+        /// stored name no longer matches the current DBC spell name.
+        /// Called automatically by <see cref="TryLoadTrees"/> so the
+        /// displayed tree always reflects the latest DBC data.
+        /// </summary>
+        public static void RefreshNamesFromDbc(string cls, string spec, string hero)
+        {
+            try
+            {
+                using var c = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
+                c.Open();
+
+                // ── talent_tree_nodes.node_name ───────────────────────────
+                var nodeUpdates = new List<(string newName, string treetype, int cellId)>();
+
+                using (var cmd = new MySqlCommand(
+                    "SELECT tree_type, cell_id, spell_id, node_name " +
+                    "FROM talent_tree_nodes " +
+                    "WHERE class_name=@c AND spec_name=@s " +
+                    "AND (hero_name=@h OR hero_name='')", c))
+                {
+                    cmd.Parameters.AddWithValue("@c", cls);
+                    cmd.Parameters.AddWithValue("@s", spec);
+                    cmd.Parameters.AddWithValue("@h", hero);
+                    using var r = cmd.ExecuteReader();
+                    while (r.Read())
+                    {
+                        int spellId    = r.GetInt32(2);
+                        string stored  = r.GetString(3);
+                        if (spellId <= 0) continue;
+                        if (!DBC.DBC.SpellInfoStore.TryGetValue(spellId, out var si)) continue;
+                        string fresh = si.Name;
+                        if (!string.IsNullOrEmpty(fresh) && fresh != stored)
+                            nodeUpdates.Add((fresh, r.GetString(0), r.GetInt32(1)));
+                    }
+                }
+
+                foreach (var (newName, treetype, cellId) in nodeUpdates)
+                {
+                    using var upd = new MySqlCommand(
+                        "UPDATE talent_tree_nodes SET node_name=@n " +
+                        "WHERE tree_type=@t AND cell_id=@id " +
+                        "AND class_name=@c AND spec_name=@s " +
+                        "AND (hero_name=@h OR hero_name='')", c);
+                    upd.Parameters.AddWithValue("@n",  newName);
+                    upd.Parameters.AddWithValue("@t",  treetype);
+                    upd.Parameters.AddWithValue("@id", cellId);
+                    upd.Parameters.AddWithValue("@c",  cls);
+                    upd.Parameters.AddWithValue("@s",  spec);
+                    upd.Parameters.AddWithValue("@h",  hero);
+                    upd.ExecuteNonQuery();
+                }
+
+                // ── talent_spells.spell_name ──────────────────────────────
+                var spellUpdates = new List<(string newName, int spellId)>();
+
+                using (var cmd2 = new MySqlCommand(
+                    "SELECT spell_id, spell_name " +
+                    "FROM talent_spells " +
+                    "WHERE class_name=@c AND spec_name=@s AND hero_name=@h", c))
+                {
+                    cmd2.Parameters.AddWithValue("@c", cls);
+                    cmd2.Parameters.AddWithValue("@s", spec);
+                    cmd2.Parameters.AddWithValue("@h", hero);
+                    using var r2 = cmd2.ExecuteReader();
+                    while (r2.Read())
+                    {
+                        int spellId   = r2.GetInt32(0);
+                        string stored = r2.GetString(1);
+                        if (spellId <= 0) continue;
+                        if (!DBC.DBC.SpellInfoStore.TryGetValue(spellId, out var si)) continue;
+                        string fresh = si.Name;
+                        if (!string.IsNullOrEmpty(fresh) && fresh != stored)
+                            spellUpdates.Add((fresh, spellId));
+                    }
+                }
+
+                foreach (var (newName, spellId) in spellUpdates)
+                {
+                    using var upd2 = new MySqlCommand(
+                        "UPDATE talent_spells SET spell_name=@n " +
+                        "WHERE spell_id=@id AND class_name=@c AND spec_name=@s AND hero_name=@h", c);
+                    upd2.Parameters.AddWithValue("@n",  newName);
+                    upd2.Parameters.AddWithValue("@id", spellId);
+                    upd2.Parameters.AddWithValue("@c",  cls);
+                    upd2.Parameters.AddWithValue("@s",  spec);
+                    upd2.Parameters.AddWithValue("@h",  hero);
+                    upd2.ExecuteNonQuery();
+                }
+            }
+            catch { /* non-fatal – tree loading continues with stored names */ }
+        }
 
         public static (string status, string notes) GetSpellStatusNotes(int spellId)
         {
@@ -321,6 +431,10 @@ namespace SpellWork.Database
             var storedNodes = LoadNodes(cls, spec, hero);
             if (storedNodes.Count == 0) return null;
 
+            // Silently update any node/spell names in the DB that have drifted
+            // from the current DBC data (e.g. after a game patch renames a spell).
+            RefreshNamesFromDbc(cls, spec, hero);
+
             var storedConns = LoadConnections(cls, spec, hero);
             var connLookup  = storedConns
                 .GroupBy(c => (c.TreeType, c.FromCell))
@@ -335,7 +449,7 @@ namespace SpellWork.Database
             var clsLower = cls.ToLowerInvariant();
             var iconDirs = new List<string>();
             string primaryDir = FindSqlSubDir(Path.Combine("talentIcons", clsLower));
-            iconDirs.Add(primaryDir);  // always add (may not exist yet � checked per-file)
+            iconDirs.Add(primaryDir);  // always add (may not exist yet � checked per-file)
 
             // Legacy fallback: walk up looking for talentTracker\classSpells\<class>
             var legacyDir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -367,12 +481,12 @@ namespace SpellWork.Database
                                     .ToDictionary(x => x.r, x => x.idx);
 
                 // Column normalization strategy:
-                //   Hero tree  � per-row centering: each row's nodes are packed to 0,1,2,�
+                //   Hero tree  � per-row centering: each row's nodes are packed to 0,1,2,�
                 //                and shorter rows are centred relative to the widest row.
                 //                This prevents the empty-slot gap that appears when the
                 //                top/bottom single node forces a centre column that other
                 //                rows don't use.
-                //   Class/spec � global compact mapping: preserves lateral alignment between
+                //   Class/spec � global compact mapping: preserves lateral alignment between
                 //                rows (important for the irregular class/spec shapes).
                 Dictionary<int, float> colByCell;
                 if (tt == "hero" && treeRaw.Count > 0)
@@ -475,11 +589,11 @@ namespace SpellWork.Database
 
             int iconsLoaded = result.Sum(t => t?.Nodes.Count(n => n.Icon != null) ?? 0);
             LastIconDiagnostic = totalWithName == 0
-                ? $"? 0/{storedNodes.Count} nodes have icon_name in DB � re-run parse_raw.ps1"
+                ? $"? 0/{storedNodes.Count} nodes have icon_name in DB � re-run parse_raw.ps1"
                 : !Directory.Exists(primaryDir)
-                    ? $"? Icon dir not found: {primaryDir} � re-run parse_raw.ps1 to download icons"
+                    ? $"? Icon dir not found: {primaryDir} � re-run parse_raw.ps1 to download icons"
                     : iconsLoaded == 0
-                        ? $"? Dir found but 0 icons loaded � check {primaryDir}"
+                        ? $"? Dir found but 0 icons loaded � check {primaryDir}"
                         : $"? {iconsLoaded}/{totalWithName} icons loaded from {primaryDir}";
             Trace.WriteLine($"[TalentIcons] {LastIconDiagnostic}");
             return result;

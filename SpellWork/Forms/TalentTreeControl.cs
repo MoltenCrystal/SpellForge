@@ -754,15 +754,15 @@ namespace SpellWork.Forms
             };
             cms.Items.Add(notesItem);
 
-            // IMPLEMENT – only for NYI nodes that were observed in the sniff capture
-            if (currentStatus == "nyi" && node.ActiveSpellId > 0 && _sniffMatchedSpellIds.Contains(node.ActiveSpellId))
+            // FORGE SPELL – available for all NYI nodes
+            if (currentStatus == "nyi" && node.ActiveSpellId > 0)
             {
                 cms.Items.Add(new ToolStripSeparator());
 
-                var implementItem = new ToolStripMenuItem("IMPLEMENT")
+                var implementItem = new ToolStripMenuItem("FORGE SPELL")
                 {
                     BackColor = Color.FromArgb(24, 24, 32),
-                    ForeColor = Color.FromArgb(100, 200, 255),
+                    ForeColor = Color.FromArgb(255, 128, 0),
                     Font      = new Font(cms.Font, FontStyle.Bold),
                 };
                 implementItem.Click += (_, _) => ShowImplementDialog(node, currentNotes);
@@ -780,7 +780,7 @@ namespace SpellWork.Forms
 
             using var frm = new Form
             {
-                Text            = $"IMPLEMENT – {node.ActiveName}",
+                Text            = $"FORGE SPELL – {node.ActiveName}",
                 Width           = 780,
                 Height          = 620,
                 StartPosition   = FormStartPosition.CenterParent,
@@ -956,6 +956,16 @@ namespace SpellWork.Forms
                 sb.AppendLine();
                 sb.AppendLine("=== NOTES ===");
                 sb.AppendLine(currentNotes);
+            }
+
+            // ── Sniff database evidence (aggregated stats from imported captures) ──
+            var sniffEvidence = Database.SniffPromptGenerator.BuildEvidenceBlock(
+                node.ActiveSpellId,
+                allRelated.AsReadOnly());
+            if (sniffEvidence != null)
+            {
+                sb.AppendLine();
+                sb.Append(sniffEvidence);
             }
 
             sb.AppendLine();

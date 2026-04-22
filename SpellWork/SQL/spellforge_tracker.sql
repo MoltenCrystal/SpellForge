@@ -15,12 +15,12 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 
--- Dumping database structure for spellhell_tracker
-DROP DATABASE IF EXISTS `spellhell_tracker`;
-CREATE DATABASE IF NOT EXISTS `spellhell_tracker` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
-USE `spellhell_tracker`;
+-- Dumping database structure for spellforge_tracker
+DROP DATABASE IF EXISTS `spellforge_tracker`;
+CREATE DATABASE IF NOT EXISTS `spellforge_tracker` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
+USE `spellforge_tracker`;
 
--- Dumping structure for table spellhell_tracker.talent_spells
+-- Dumping structure for table spellforge_tracker.talent_spells
 DROP TABLE IF EXISTS `talent_spells`;
 CREATE TABLE IF NOT EXISTS `talent_spells` (
   `spell_id` int NOT NULL,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS `talent_spells` (
 
 -- Data exporting was unselected.
 
--- Dumping structure for table spellhell_tracker.talent_tree_connections
+-- Dumping structure for table spellforge_tracker.talent_tree_connections
 DROP TABLE IF EXISTS `talent_tree_connections`;
 CREATE TABLE IF NOT EXISTS `talent_tree_connections` (
   `id` int NOT NULL AUTO_INCREMENT,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS `talent_tree_connections` (
 
 -- Data exporting was unselected.
 
--- Dumping structure for table spellhell_tracker.talent_tree_nodes
+-- Dumping structure for table spellforge_tracker.talent_tree_nodes
 DROP TABLE IF EXISTS `talent_tree_nodes`;
 CREATE TABLE IF NOT EXISTS `talent_tree_nodes` (
   `class_name` varchar(50) NOT NULL,

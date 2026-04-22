@@ -1,4 +1,4 @@
-﻿using SpellWork.Database;
+using SpellWork.Database;
 using SpellWork.Extensions;
 using SpellWork.Filtering;
 using SpellWork.Spell;
@@ -95,51 +95,31 @@ namespace SpellWork.Forms
 
             RefreshConnectionStatus();
 
-            // SpellHell Tracker – status bar (in main StatusStrip) + talent tree canvas
-            _tpSpellHellTracker.BackColor = Color.FromArgb(12, 12, 18);
+            // Spellforge Tracker ? status bar (in main StatusStrip) + talent tree canvas
+            _tpSpellForgeTracker.BackColor = Color.FromArgb(12, 12, 18);
 
             _lblTrackerStatus = new ToolStripStatusLabel
             {
                 Spring    = true,
                 TextAlign = System.Drawing.ContentAlignment.MiddleRight,
                 ForeColor = Color.FromArgb(160, 160, 170),
-                Text      = "Select a class → spec → hero talent from the icon bar above.",
+                Text      = "Select a class ? spec ? hero talent from the icon bar above.",
                 Overflow  = ToolStripItemOverflow.Never,
             };
             statusStrip1.Items.Add(_lblTrackerStatus);
 
             _talentTreeControl = new TalentTreeControl { Dock = DockStyle.Fill };
-            // Start with no trees – they are populated from the DB after a class/spec/hero is selected.
+            // Start with no trees ? they are populated from the DB after a class/spec/hero is selected.
             _talentTreeControl.SetTrees(Array.Empty<TalentTree>());
             _talentTreeControl.ClassSpecHeroSelected  += OnClassSpecHeroSelected;
             _talentTreeControl.NodeOpenInSpellInfo    += OnNodeOpenInSpellInfo;
             _talentTreeControl.NodeStatusNotesUpdated += OnNodeStatusNotesUpdated;
             _talentTreeControl.QuerySpellStatusNotes   = spellId =>
-                Database.SpellHellTrackerDb.GetSpellStatusNotes(spellId);
+                Database.SpellForgeTrackerDb.GetSpellStatusNotes(spellId);
             _talentTreeControl.QueryImplementationSpells = spellId =>
                 GetImplementationSpells(spellId);
-            _talentTreeControl.QuerySummonedCreatureCasts = creatureEntry =>
-                _spellHellParserSummonedCasts.TryGetValue(creatureEntry, out var ids)
-                    ? (IReadOnlyCollection<int>)ids
-                    : Array.Empty<int>();
-            _tpSpellHellTracker.Controls.Add(_talentTreeControl);
-
-            // Class filter ComboBox for the SpellHell Parser lists.
-            // Positioned to the right of the Parse button (x=555+75+18 = 648).
-            _cbSpellHellParserClassFilter = new ComboBox
-            {
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Location      = new Point(648, 7),
-                Width         = 140,
-                FlatStyle     = FlatStyle.Standard,
-                TabIndex      = 10,
-            };
-            _cbSpellHellParserClassFilter.Items.Add("All Classes");
-            foreach (var (name, _) in s_parserClassFilters)
-                _cbSpellHellParserClassFilter.Items.Add(name);
-            _cbSpellHellParserClassFilter.SelectedIndex = 0;
-            _cbSpellHellParserClassFilter.SelectedIndexChanged += SpellHellParserClassFilterChanged;
-            _tpSpellHellParser.Controls.Add(_cbSpellHellParserClassFilter);
+            _talentTreeControl.QuerySummonedCreatureCasts = _ => Array.Empty<int>();
+            _tpSpellForgeTracker.Controls.Add(_talentTreeControl);
         }
 
         #region FORM
@@ -147,6 +127,115 @@ namespace SpellWork.Forms
         private void ExitClick(object sender, EventArgs e)
         {
             Application.Exit();
+        }
+
+        // ------------------------------------------------------------------ //
+        // Tools > Import sniff...
+        // ------------------------------------------------------------------ //
+        private void TsmImportSniffClick(object sender, EventArgs e)
+        {
+            using var ofd = new OpenFileDialog
+            {
+                Title       = "Select WowPacketParser parsed output file",
+                Filter      = "Parsed text files (*_parsed.txt)|*_parsed.txt|Text files (*.txt)|*.txt|All files (*.*)|*.*",
+                Multiselect = false,
+            };
+
+            if (ofd.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            string filePath = ofd.FileName;
+
+            // Ensure the sniffs schema exists before importing
+            if (!SpellForgeSniffsDb.EnsureSchema())
+            {
+                MessageBox.Show(
+                    "Could not initialise the spellforge_sniffs database.\n" +
+                    "Check your connection settings under File ? Settings.",
+                    "SpellForge ? Import Sniff",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            // Show a progress dialog and run the import on a background thread
+            using var progressForm = new Form
+            {
+                Text            = "Importing sniff?",
+                Width           = 420,
+                Height          = 110,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition   = FormStartPosition.CenterParent,
+                MaximizeBox     = false,
+                MinimizeBox     = false,
+                ControlBox      = false,
+            };
+            var progressLabel = new Label
+            {
+                Dock      = DockStyle.Fill,
+                TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
+                Text      = "Parsing packets?",
+            };
+            progressForm.Controls.Add(progressLabel);
+            progressForm.Show(this);
+            Application.DoEvents();
+
+            SniffImportResult? result = null;
+            Exception? importEx = null;
+
+            var importer = new SniffImporter();
+            importer.OnProgress += (packets, opcode) =>
+            {
+                progressLabel.Text = $"Parsed {packets:N0} packets?";
+                Application.DoEvents();
+            };
+            importer.OnParseError += (lineNum, raw, ex) =>
+            {
+                // Non-fatal ? silently swallow parse errors
+            };
+
+            try
+            {
+                result = importer.Import(filePath);
+            }
+            catch (Exception ex)
+            {
+                importEx = ex;
+            }
+            finally
+            {
+                progressForm.Close();
+            }
+
+            if (importEx != null)
+            {
+                MessageBox.Show(
+                    $"Import failed:\n{importEx.Message}",
+                    "SpellForge ? Import Sniff",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            if (result == null || !result.Success)
+            {
+                MessageBox.Show(
+                    result?.ErrorMessage ?? "Unknown error during import.",
+                    "SpellForge ? Import Sniff",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            MessageBox.Show(
+                $"Import complete!\n\n" +
+                $"Packets parsed:     {result.PacketsParsed:N0}\n" +
+                $"Spell casts:        {result.CastsInserted:N0}\n" +
+                $"Aura events:        {result.AuraEventsInserted:N0}\n" +
+                $"Damage events:      {result.DamageEventsInserted:N0}\n" +
+                $"Heal events:        {result.HealEventsInserted:N0}\n" +
+                $"Energize events:    {result.EnergizeEventsInserted:N0}\n" +
+                $"Periodic events:    {result.PeriodicEventsInserted:N0}\n" +
+                $"Unique spells:      {result.AffectedSpellIds.Count:N0}",
+                "SpellForge ? Import Sniff",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void ExtractEnumsClick(object sender, EventArgs e)
@@ -222,7 +311,7 @@ namespace SpellWork.Forms
                         }
 
                         var sb = new StringBuilder();
-                        sb.AppendLine($"// Extracted from {baseName}.h — enum {currentEnumName}");
+                        sb.AppendLine($"// Extracted from {baseName}.h ? enum {currentEnumName}");
                         sb.AppendLine($"// {constName} = {spellId}");
                         sb.AppendLine($"// Generated by SpellWork on {timestamp}");
                         sb.AppendLine();
@@ -271,10 +360,10 @@ namespace SpellWork.Forms
 
                 FlushEnum();
 
-                // ── SPELL_PROC_<BASENAME>.txt ─────────────────────────────────────────────
+                // -- SPELL_PROC_<BASENAME>.txt ---------------------------------------------
                 // Determine which SpellFamilyName(s) this header belongs to by looking at
                 // the resolved spells, then dump ALL spells for those families from the full
-                // DBC — grouped by SpellClassMask — so it covers every flag combination,
+                // DBC ? grouped by SpellClassMask ? so it covers every flag combination,
                 // not just the subset referenced in the header file.
                 if (allFileSpells.Count > 0)
                 {
@@ -304,7 +393,7 @@ namespace SpellWork.Forms
                                 : "SPELLFAMILY_UNKNOWN";
 
                             // Pull every spell in this family that has at least one non-zero
-                            // SpellClassMask word — these are the only ones relevant to spell_proc.
+                            // SpellClassMask word ? these are the only ones relevant to spell_proc.
                             var familySpells = DBC.DBC.SpellInfoStore.Values
                                 .Where(s => s.SpellFamilyName == family &&
                                             s.SpellClassMask.Any(m => m != 0))
@@ -361,7 +450,7 @@ namespace SpellWork.Forms
 
         private void TabControl1SelectedIndexChanged(object sender, EventArgs e)
         {
-            _cbProcFlag.Visible = _bWrite.Visible = ((TabControl)sender).SelectedIndex == 3;
+            _cbProcFlag.Visible = _bWrite.Visible = ((TabControl)sender).SelectedIndex == 2;
         }
 
         private void SettingsClick(object sender, EventArgs e)
@@ -437,7 +526,7 @@ namespace SpellWork.Forms
 
         #endregion
 
-        #region SPELLHELL TRACKER PAGE
+        #region SPELLFORGE TRACKER PAGE
 
         private void OnClassSpecHeroSelected(string className, string specName, string heroName)
         {
@@ -447,23 +536,25 @@ namespace SpellWork.Forms
             _currentSpecName  = specName;
             _currentHeroName  = heroName;
 
-            // If the DB already has data for this combination, load it directly.
-            if (Database.MySqlConnection.Connected &&
-                Database.SpellHellTrackerDb.HasData(className, specName, heroName))
+            // If the tracker DB already has data for this combination, load it directly.
+            // Uses SpellForgeTrackerDb.CanConnect() so this works even when the world
+            // DB (MySqlConnection.Connected) is not configured.
+            if (Database.SpellForgeTrackerDb.CanConnect() &&
+                Database.SpellForgeTrackerDb.HasData(className, specName, heroName))
             {
-                var dbTrees = Database.SpellHellTrackerDb.TryLoadTrees(className, specName, heroName);
+                var dbTrees = Database.SpellForgeTrackerDb.TryLoadTrees(className, specName, heroName);
                 if (dbTrees != null)
                 {
                     _talentTreeControl.SetTrees(dbTrees);
                     if (_lblTrackerStatus != null)
                         _lblTrackerStatus.Text =
-                            $"Loaded from DB – {className} / {specName} / {heroName}  |  " +
-                            Database.SpellHellTrackerDb.LastIconDiagnostic;
+                            $"Loaded from DB ? {className} / {specName} / {heroName}  |  " +
+                            Database.SpellForgeTrackerDb.LastIconDiagnostic;
                     return;
                 }
             }
 
-            // No data available – show empty canvas.
+            // No data available ? show empty canvas.
             _talentTreeControl.SetTrees(Array.Empty<TalentTree>());
             if (_lblTrackerStatus != null)
                 _lblTrackerStatus.Text =
@@ -481,8 +572,8 @@ namespace SpellWork.Forms
 
         private void OnNodeStatusNotesUpdated(TalentNode node, string status, string notes)
         {
-            if (!Database.MySqlConnection.Connected) return;
-            Database.SpellHellTrackerDb.UpdateSpellStatusNotes(node.ActiveSpellId, status, notes);
+            if (!Database.SpellForgeTrackerDb.CanConnect()) return;
+            Database.SpellForgeTrackerDb.UpdateSpellStatusNotes(node.ActiveSpellId, status, notes);
             if (_lblTrackerStatus != null)
                 _lblTrackerStatus.Text =
                     $"{node.ActiveName} (ID {node.ActiveSpellId}): status={status}" +
@@ -502,28 +593,28 @@ namespace SpellWork.Forms
                 var nodeSummary =
                     $"({trees[0].Nodes.Count} + {trees[1].Nodes.Count} + {trees[2].Nodes.Count} nodes)";
 
-                // ── Database sync ──────────────────────────────────────────
+                // -- Database sync ------------------------------------------
                 string dbStatus = string.Empty;
                 if (Database.MySqlConnection.Connected)
                 {
                     if (_lblWowheadStatus != null)
-                        _lblWowheadStatus.Text = "Syncing with spellhell_tracker DB…";
+                        _lblWowheadStatus.Text = "Syncing with spellforge_tracker DB?";
 
-                    if (!Database.SpellHellTrackerDb.EnsureSchema())
+                    if (!Database.SpellForgeTrackerDb.EnsureSchema())
                     {
                         dbStatus = "  [DB schema init failed]";
                     }
                     else
                     {
                         // Upsert spells (preserves user-written status/notes on re-sync).
-                        Database.SpellHellTrackerDb.UpsertSpells(
+                        Database.SpellForgeTrackerDb.UpsertSpells(
                             parsed.Spells.Select(s =>
                                 (s.SpellId, s.SpellName,
                                  _currentClassName, _currentSpecName, _currentHeroName,
                                  s.TreeType)));
 
                         // Diff against what is stored and generate SQL patch if needed.
-                        var syncResult = Database.SpellHellTrackerDb.DiffAndApply(
+                        var syncResult = Database.SpellForgeTrackerDb.DiffAndApply(
                             trees,
                             _currentClassName, _currentSpecName, _currentHeroName,
                             AppContext.BaseDirectory);
@@ -537,12 +628,12 @@ namespace SpellWork.Forms
                 }
                 else
                 {
-                    dbStatus = "  (no DB connection – skipped)";
+                    dbStatus = "  (no DB connection ? skipped)";
                 }
 
                 if (_lblWowheadStatus != null)
                     _lblWowheadStatus.Text =
-                        $"Synced – {_currentClassName} / {_currentSpecName} / {_currentHeroName} " +
+                        $"Synced ? {_currentClassName} / {_currentSpecName} / {_currentHeroName} " +
                         nodeSummary + dbStatus;
             }
             catch (Exception ex)
@@ -565,9 +656,9 @@ namespace SpellWork.Forms
         {
             try
             {
-                if (!Database.MySqlConnection.Connected)
+                if (!Database.SpellForgeTrackerDb.CanConnect())
                 {
-                    MessageBox.Show("No database connection. Configure the connection in Settings.",
+                    MessageBox.Show("Cannot reach the spellforge_tracker database. Configure the connection in Settings.",
                         "Import SQL", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -581,11 +672,11 @@ namespace SpellWork.Forms
                 }
 
                 var (executed, errors) = await Task.Run(() =>
-                    Database.SpellHellTrackerDb.ImportSqlFiles(sqlDir));
+                    Database.SpellForgeTrackerDb.ImportSqlFiles(sqlDir));
 
                 if (_lblWowheadStatus != null)
                     _lblWowheadStatus.Text =
-                        $"Import done – {executed} statements executed, {errors} errors. " +
+                        $"Import done ? {executed} statements executed, {errors} errors. " +
                         "Select a class to view the talent tree.";
 
                 // Reload the current selection from the freshly imported data.
@@ -614,12 +705,12 @@ namespace SpellWork.Forms
 
                 // Always create the SQL folder and write the schema bootstrap file
                 // so the folder is visible even before any class data is parsed.
-                var schemaFile = Database.SpellHellTrackerDb.GenerateSchemaFile(outputDir);
+                var schemaFile = Database.SpellForgeTrackerDb.GenerateSchemaFile(outputDir);
 
                 if (_lblWowheadStatus != null)
-                    _lblWowheadStatus.Text = $"Schema written → {Path.GetFileName(schemaFile)}. Fetching talent bundle…";
+                    _lblWowheadStatus.Text = $"Schema written ? {Path.GetFileName(schemaFile)}. Fetching talent bundle?";
 
-                // Fetch the data bundle once – it contains every class/spec/hero combination.
+                // Fetch the data bundle once ? it contains every class/spec/hero combination.
                 var seedUrl  = WowheadTalentParser.BuildUrl("warrior", "arms", "colossus");
                 var pageData = await WowheadTalentParser.FetchPageDataAsync(seedUrl);
 
@@ -628,7 +719,7 @@ namespace SpellWork.Forms
 
                 // Ensure schema exists in DB so DiffAndApply can compare; skip if not connected.
                 if (Database.MySqlConnection.Connected)
-                    Database.SpellHellTrackerDb.EnsureSchema();
+                    Database.SpellForgeTrackerDb.EnsureSchema();
 
                 int filesWritten  = 0;
                 int emptyTrees    = 0;
@@ -656,7 +747,7 @@ namespace SpellWork.Forms
                                     }
                                     else
                                     {
-                                        var syncResult = Database.SpellHellTrackerDb.DiffAndApply(
+                                        var syncResult = Database.SpellForgeTrackerDb.DiffAndApply(
                                             parsed.Trees, cls.Name, spec.Name, hero, outputDir);
                                         if (syncResult.HasChanges)
                                             filesWritten++;
@@ -672,7 +763,7 @@ namespace SpellWork.Forms
                 });
 
                 var summary = new System.Text.StringBuilder();
-                summary.Append($"Done – {filesWritten}/{total} SQL files written to SQL\\ folder");
+                summary.Append($"Done ? {filesWritten}/{total} SQL files written to SQL\\ folder");
                 if (emptyTrees > 0)
                     summary.Append($", {emptyTrees} empty (parser returned no nodes)");
                 if (parseErrors > 0)
@@ -719,7 +810,7 @@ namespace SpellWork.Forms
         /// talent spell ID.  Includes directly triggered spells, required aura chains,
         /// same-name sniff captures, OriginalCastID-linked triggers, description name matches,
         /// modifier-aura hooked spells (when named in description), and consumer chains
-        /// (spells that consume an already-included buff, e.g. Arcane Missiles → Clearcasting).
+        /// (spells that consume an already-included buff, e.g. Arcane Missiles ? Clearcasting).
         /// </summary>
         private IReadOnlyList<SpellInfo> GetImplementationSpells(int talentSpellId)
         {
@@ -732,7 +823,7 @@ namespace SpellWork.Forms
 
             // Only adds to seenIds (and result) when the spell has not been seen before.
             // IMPORTANT: seenIds.Add must be the LAST condition so it only fires when all
-            // prior checks pass — avoiding the bug where iterating the full list consumed
+            // prior checks pass ? avoiding the bug where iterating the full list consumed
             // every ID into seenIds before the description-text passes could see them.
             bool TryInclude(SpellInfo s)
             {
@@ -743,7 +834,7 @@ namespace SpellWork.Forms
             }
 
             // Includes a spell by ID and also follows its EffectTriggerSpell chain one level
-            // deep (e.g. CasterAuraSpell → the aura itself → what it fires when consumed).
+            // deep (e.g. CasterAuraSpell ? the aura itself ? what it fires when consumed).
             void IncludeWithTriggerChain(int spellId)
             {
                 if (spellId == 0 || !DBC.DBC.SpellInfoStore.TryGetValue(spellId, out var s)) return;
@@ -759,44 +850,34 @@ namespace SpellWork.Forms
                 if (eff.EffectTriggerSpell != 0)
                     IncludeWithTriggerChain(eff.EffectTriggerSpell);
 
-            // DBC Pass 1: CasterAuraSpell / TargetAuraSpell – the aura the talent
+            // DBC Pass 1: CasterAuraSpell / TargetAuraSpell ? the aura the talent
             // requires or interacts with, plus any spells those auras themselves trigger.
             IncludeWithTriggerChain(talentSpell.CasterAuraSpell);
             IncludeWithTriggerChain(talentSpell.TargetAuraSpell);
 
-            // Pass 2: spells in the casted list with the same name as the talent
-            foreach (var s in _spellHellParserCastedList)
-                if (s.Name.Equals(talentName, StringComparison.OrdinalIgnoreCase))
-                    TryInclude(s);
+            // Pass 2-3: SpellForge sniff DB � find spells with the same name as the talent
+            // that appear in cast or event data captured from packet sniffs.
+            if (Database.SpellForgeSniffsDb.CanConnect())
+            {
+                var sniffCastIds = Database.SpellForgeSniffsDb.GetAllCastSpellIds();
+                foreach (var id in sniffCastIds)
+                    if (DBC.DBC.SpellInfoStore.TryGetValue(id, out var s) &&
+                        s.Name.Equals(talentName, StringComparison.OrdinalIgnoreCase))
+                        TryInclude(s);
 
-            // Pass 3: spells in the known-spell list with the same name as the talent
-            foreach (var s in _spellHellParserList)
-                if (s.Name.Equals(talentName, StringComparison.OrdinalIgnoreCase))
-                    TryInclude(s);
-
-            // Pass 4: spells that were observed being triggered by this talent (OriginalCastID)
-            foreach (var kvp in _spellHellParserCastedByMap)
-                if (kvp.Value == talentSpellId &&
-                    DBC.DBC.SpellInfoStore.TryGetValue(kvp.Key, out var triggeredSpell))
-                    TryInclude(triggeredSpell);
+                var sniffEventIds = Database.SpellForgeSniffsDb.GetAllEventSpellIds();
+                foreach (var id in sniffEventIds)
+                    if (DBC.DBC.SpellInfoStore.TryGetValue(id, out var s) &&
+                        s.Name.Equals(talentName, StringComparison.OrdinalIgnoreCase))
+                        TryInclude(s);
+            }
 
             // Pass 5: spell names literally mentioned in the talent's Description / Tooltip
-            // — search sniff lists first, then fall back to DBC same-family lookup.
             var descText = string.Concat(talentSpell.Description, " ", talentSpell.Tooltip);
             if (!string.IsNullOrWhiteSpace(descText))
             {
-                foreach (var s in _spellHellParserCastedList)
-                    if (!string.IsNullOrEmpty(s.Name) && s.Name.Length >= 4 &&
-                        descText.Contains(s.Name, StringComparison.OrdinalIgnoreCase))
-                        TryInclude(s);
-
-                foreach (var s in _spellHellParserList)
-                    if (!string.IsNullOrEmpty(s.Name) && s.Name.Length >= 4 &&
-                        descText.Contains(s.Name, StringComparison.OrdinalIgnoreCase))
-                        TryInclude(s);
-
                 // DBC fallback: same-family spells whose name appears in the description.
-                // Guard: skip generic class passives (SpellClassMask all-zero – these are
+                // Guard: skip generic class passives (SpellClassMask all-zero ? these are
                 // marker spells like "Mage" / "Warrior" with no actual affected spells).
                 foreach (var s in DBC.DBC.SpellInfoStore.Values)
                     if (s.SpellFamilyName == talentSpell.SpellFamilyName &&
@@ -806,7 +887,7 @@ namespace SpellWork.Forms
                         TryInclude(s);
             }
 
-            // DBC Pass 6: modifier-aura talents (ADD_*_MODIFIER) – find the spell being
+            // DBC Pass 6: modifier-aura talents (ADD_*_MODIFIER) ? find the spell being
             // hooked via the ClassMask, but only when its name also appears in the
             // description to avoid pulling in every spell with a matching family bit.
             if (!string.IsNullOrWhiteSpace(descText))
@@ -835,11 +916,11 @@ namespace SpellWork.Forms
                 }
             }
 
-            // DBC Pass 7: "consumer chain" – for each buff/aura already included (has a
+            // DBC Pass 7: "consumer chain" ? for each buff/aura already included (has a
             // non-zero duration), find same-family spells whose CasterAuraSpell points to
             // it (i.e. spells that require/consume that buff) and include them with their
-            // own trigger chain.  Example: Clearcasting (included via description) →
-            // Arcane Missiles (CasterAuraSpell == Clearcasting) → its damage trigger.
+            // own trigger chain.  Example: Clearcasting (included via description) ?
+            // Arcane Missiles (CasterAuraSpell == Clearcasting) ? its damage trigger.
             var buffSnapshot = result.ToList();
             foreach (var buffSpell in buffSnapshot)
             {
@@ -850,25 +931,6 @@ namespace SpellWork.Forms
                     if (s.CasterAuraSpell != buffSpell.ID) continue;
                     IncludeWithTriggerChain(s.ID);
                 }
-            }
-
-            // Sniff transitive pass: for each spell in result that has SPELL_EFFECT_SUMMON,
-            // include any sniff-casted spell whose casted-by map entry points to it.
-            // Restricted to summon-origin links so that regular OriginalCastID-triggered
-            // spells (e.g. Arcane Surge triggering other Mage spells) are NOT pulled in.
-            var resultIdSnapshot = new HashSet<int>(result.Select(s => s.ID));
-            foreach (var kvp in _spellHellParserCastedByMap)
-            {
-                if (!resultIdSnapshot.Contains(kvp.Value)) continue;
-                if (!DBC.DBC.SpellInfoStore.TryGetValue(kvp.Value, out var originSpell)) continue;
-
-                // Only follow the chain when the origin spell summoned a creature.
-                bool originHasSummon = originSpell.SpellEffectInfoStore
-                    .Any(eff => eff.Effect == (int)SpellEffects.SPELL_EFFECT_SUMMON);
-                if (!originHasSummon) continue;
-
-                if (DBC.DBC.SpellInfoStore.TryGetValue(kvp.Key, out var transitiveSpell))
-                    TryInclude(transitiveSpell);
             }
 
             return result;
@@ -911,7 +973,7 @@ namespace SpellWork.Forms
             return new TalentTree { Name = name, Nodes = nodes };
         }
 
-        // Class tree  (6 columns, 10 rows – Warrior-like diamond layout)
+        // Class tree  (6 columns, 10 rows ? Warrior-like diamond layout)
         private static IEnumerable<(int, int, bool, int)> BuildClassLayout() =>
         [
             (1, 0, true,  1), (4, 0, true,  1),                            // row 0 gates
@@ -926,7 +988,7 @@ namespace SpellWork.Forms
             (2, 9, false, 1), (3, 9, false, 4),
         ];
 
-        // Hero tree  (4 columns, 6 rows – narrower centre tree)
+        // Hero tree  (4 columns, 6 rows ? narrower centre tree)
         private static IEnumerable<(int, int, bool, int)> BuildHeroLayout() =>
         [
             (1, 0, true,  1), (2, 0, true,  1),                            // row 0 gates
@@ -937,7 +999,7 @@ namespace SpellWork.Forms
             (1, 5, false, 1), (2, 5, false, 1),
         ];
 
-        // Spec tree  (6 columns, 10 rows – mirror of class tree)
+        // Spec tree  (6 columns, 10 rows ? mirror of class tree)
         private static IEnumerable<(int, int, bool, int)> BuildSpecLayout() =>
         [
             (0, 0, true,  1), (3, 0, true,  1),                            // row 0 gates
@@ -954,773 +1016,6 @@ namespace SpellWork.Forms
 
         #endregion
 
-        #region SPELLHELL PARSER PAGE
-
-        private static readonly HashSet<uint> _playerClassFamilies = new HashSet<uint>
-        {
-            (uint)SpellFamilyNames.SPELLFAMILY_WARRIOR,
-            (uint)SpellFamilyNames.SPELLFAMILY_MAGE,
-            (uint)SpellFamilyNames.SPELLFAMILY_WARLOCK,
-            (uint)SpellFamilyNames.SPELLFAMILY_PRIEST,
-            (uint)SpellFamilyNames.SPELLFAMILY_DRUID,
-            (uint)SpellFamilyNames.SPELLFAMILY_ROGUE,
-            (uint)SpellFamilyNames.SPELLFAMILY_HUNTER,
-            (uint)SpellFamilyNames.SPELLFAMILY_PALADIN,
-            (uint)SpellFamilyNames.SPELLFAMILY_SHAMAN,
-            (uint)SpellFamilyNames.SPELLFAMILY_DEATHKNIGHT,
-            (uint)SpellFamilyNames.SPELLFAMILY_MONK,
-            (uint)SpellFamilyNames.SPELLFAMILY_DEMON_HUNTER,
-            (uint)SpellFamilyNames.SPELLFAMILY_EVOKER,
-        };
-
-        private const string SpellHellParserSignature = "# TrinityCore - WowPacketParser";
-
-        private List<SpellInfo> _spellHellParserList       = new List<SpellInfo>();
-        private List<SpellInfo> _spellHellParserCastedList  = new List<SpellInfo>();
-        // Maps a casted spell ID to the ID of the class spell that originally triggered it (OriginalCastID)
-        private Dictionary<int, int> _spellHellParserCastedByMap = new Dictionary<int, int>();
-
-        // Raw sniff observations: NPC entry → set of spell IDs the summoned creature was seen casting.
-        // Populated regardless of whether the spell ID exists in DBC so that unknown spells (e.g.
-        // "-Unknown-" entries) are still surfaced in the IMPLEMENT prompt.
-        private Dictionary<int, HashSet<int>> _spellHellParserSummonedCasts = new Dictionary<int, HashSet<int>>();
-
-        // Filtered views (same reference as raw list when filter = "All Classes")
-        private List<SpellInfo> _spellHellParserListView       = new List<SpellInfo>();
-        private List<SpellInfo> _spellHellParserCastedListView = new List<SpellInfo>();
-
-        // Programmatically-created class filter control
-        private ComboBox? _cbSpellHellParserClassFilter;
-
-        // Ordered class → SpellFamilyNames mapping used to populate the filter ComboBox.
-        // Alphabetical order; must stay in sync with the ComboBox item indices (index 0 = "All").
-        private static readonly (string DisplayName, SpellFamilyNames Family)[] s_parserClassFilters =
-        [
-            ("Death Knight",  SpellFamilyNames.SPELLFAMILY_DEATHKNIGHT),
-            ("Demon Hunter",  SpellFamilyNames.SPELLFAMILY_DEMON_HUNTER),
-            ("Druid",         SpellFamilyNames.SPELLFAMILY_DRUID),
-            ("Evoker",        SpellFamilyNames.SPELLFAMILY_EVOKER),
-            ("Hunter",        SpellFamilyNames.SPELLFAMILY_HUNTER),
-            ("Mage",          SpellFamilyNames.SPELLFAMILY_MAGE),
-            ("Monk",          SpellFamilyNames.SPELLFAMILY_MONK),
-            ("Paladin",       SpellFamilyNames.SPELLFAMILY_PALADIN),
-            ("Priest",        SpellFamilyNames.SPELLFAMILY_PRIEST),
-            ("Rogue",         SpellFamilyNames.SPELLFAMILY_ROGUE),
-            ("Shaman",        SpellFamilyNames.SPELLFAMILY_SHAMAN),
-            ("Warlock",       SpellFamilyNames.SPELLFAMILY_WARLOCK),
-            ("Warrior",       SpellFamilyNames.SPELLFAMILY_WARRIOR),
-        ];
-
-        private void SpellHellParserBrowseClick(object sender, EventArgs e)
-        {
-            using var ofd = new OpenFileDialog
-            {
-                Filter = @"Text files|*.txt",
-                Title = @"Select file to parse"
-            };
-
-            if (ofd.ShowDialog(this) != DialogResult.OK)
-                return;
-
-            var path = ofd.FileName;
-
-            if (!path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
-            {
-                MessageBox.Show(@"Not a valid file. Please select a valid file to parse.", @"Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                _tbSpellHellParserInput.Text = string.Empty;
-                _bSpellHellParserParse.Enabled = false;
-                return;
-            }
-
-            string firstLine;
-            try
-            {
-                firstLine = File.ReadLines(path).FirstOrDefault() ?? string.Empty;
-            }
-            catch
-            {
-                MessageBox.Show(@"Not a valid file. Please select a valid file to parse.", @"Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                _tbSpellHellParserInput.Text = string.Empty;
-                _bSpellHellParserParse.Enabled = false;
-                return;
-            }
-
-            if (!firstLine.StartsWith(SpellHellParserSignature, StringComparison.Ordinal))
-            {
-                MessageBox.Show(@"Not a valid file. Please select a valid file to parse.", @"Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                _tbSpellHellParserInput.Text = string.Empty;
-                _bSpellHellParserParse.Enabled = false;
-                return;
-            }
-
-            _tbSpellHellParserInput.Text = path;
-            _bSpellHellParserParse.Enabled = true;
-        }
-
-        private void SpellHellParserParseClick(object sender, EventArgs e)
-        {
-            SpellHellParserExecute();
-        }
-
-        private void SpellHellParserExecute()
-        {
-            var path = _tbSpellHellParserInput.Text;
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
-                return;
-
-            _rtbSpellHellParser.Clear();
-            _spellHellParserList.Clear();
-            _spellHellParserCastedList.Clear();
-            _spellHellParserCastedByMap.Clear();
-            _spellHellParserSummonedCasts.Clear();
-
-            var seenIds = new HashSet<int>();
-            var seenCastedIds = new HashSet<int>();
-            // Track whether we are inside a cast packet block and its originating class spell
-            bool inCastBlock = false;
-            bool inAuraUpdateBlock = false;
-            int currentBlockOriginalSpellId = 0;
-            foreach (var line in File.ReadLines(path))
-            {
-                // Detect entry into a cast packet block
-                if (line.Contains("SMSG_SPELL_START") || line.Contains("SMSG_SPELL_GO") || line.Contains("SMSG_SPELL_PREPARE"))
-                {
-                    inCastBlock = true;
-                    inAuraUpdateBlock = false;
-                    currentBlockOriginalSpellId = 0;
-                }
-                else if (line.Contains("SMSG_AURA_UPDATE"))
-                {
-                    inAuraUpdateBlock = true;
-                    inCastBlock = false;
-                    currentBlockOriginalSpellId = 0;
-                }
-                else if (line.Length > 0 && line.StartsWith("ServerToClient:") || line.StartsWith("ClientToServer:"))
-                {
-                    // A new packet header line ends the current block
-                    inCastBlock = false;
-                    inAuraUpdateBlock = false;
-                    currentBlockOriginalSpellId = 0;
-                }
-
-                // Track OriginalCastID Entry inside cast blocks to allow generic spells triggered by class spells
-                if (inCastBlock && currentBlockOriginalSpellId == 0)
-                {
-                    var origMatch = _originalCastEntryRegex.Match(line);
-                    if (origMatch.Success && int.TryParse(origMatch.Groups[1].Value, out var origId)
-                        && DBC.DBC.SpellInfoStore.TryGetValue(origId, out var origSpell)
-                        && _playerClassFamilies.Contains(origSpell.SpellFamilyName))
-                    {
-                        currentBlockOriginalSpellId = origId;
-                    }
-                }
-
-                // --- Known spells ---
-                var knownIdx = line.IndexOf("KnownSpellId", StringComparison.Ordinal);
-                if (knownIdx >= 0)
-                {
-                    var rest = line.Substring(knownIdx + "KnownSpellId".Length).TrimStart(':', '=', ' ', '\t');
-                    var spaceIdx = rest.IndexOfAny(new[] { ' ', '\t', ',', ';', '\r', '\n' });
-                    var token = spaceIdx >= 0 ? rest.Substring(0, spaceIdx) : rest;
-                    if (int.TryParse(token, out var knownId) && !seenIds.Contains(knownId)
-                        && DBC.DBC.SpellInfoStore.TryGetValue(knownId, out var knownSpell)
-                        && _playerClassFamilies.Contains(knownSpell.SpellFamilyName))
-                    {
-                        seenIds.Add(knownId);
-                        _spellHellParserList.Add(knownSpell);
-                    }
-                    continue;
-                }
-
-                // --- Aura update spells ---
-                if (inAuraUpdateBlock)
-                {
-                    var am = _auraUpdateSpellLineRegex.Match(line);
-                    if (am.Success && int.TryParse(am.Groups[1].Value, out var auraSpellId)
-                        && !seenCastedIds.Contains(auraSpellId)
-                        && DBC.DBC.SpellInfoStore.TryGetValue(auraSpellId, out var auraSpell)
-                        && _playerClassFamilies.Contains(auraSpell.SpellFamilyName))
-                    {
-                        seenCastedIds.Add(auraSpellId);
-                        _spellHellParserCastedList.Add(auraSpell);
-                    }
-                    continue;
-                }
-
-                // --- Casted spells ---
-                if (!inCastBlock)
-                    continue;
-
-                var cm = _castedSpellLineRegex.Match(line);
-                if (!cm.Success)
-                    continue;
-
-                if (!int.TryParse(cm.Groups[1].Value, out var castedId) || seenCastedIds.Contains(castedId))
-                    continue;
-
-                if (!DBC.DBC.SpellInfoStore.TryGetValue(castedId, out var castedSpell))
-                    continue;
-
-                if (!_playerClassFamilies.Contains(castedSpell.SpellFamilyName)
-                    && currentBlockOriginalSpellId == 0)
-                    continue;
-
-                seenCastedIds.Add(castedId);
-                _spellHellParserCastedList.Add(castedSpell);
-                if (currentBlockOriginalSpellId != 0 && currentBlockOriginalSpellId != castedId)
-                    _spellHellParserCastedByMap[castedId] = currentBlockOriginalSpellId;
-            }
-
-            _spellHellParserList.Sort(SpellInfo.Comparer.Instance);
-            _spellHellParserCastedList.Sort(SpellInfo.Comparer.Instance);
-
-            // ── Phase 2: collect spells cast by summoned units ───────────────────────────
-            // For every spell already collected, scan its DBC SPELL_EFFECT_SUMMON effects
-            // to build a map: creature NPC entry ID → originating class spell ID.
-            var summonCreatureToSpell = new Dictionary<int, int>();
-            foreach (var spell in _spellHellParserList.Concat(_spellHellParserCastedList))
-                foreach (var eff in spell.SpellEffectInfoStore)
-                    if (eff.Effect == (int)SpellEffects.SPELL_EFFECT_SUMMON && eff.EffectMiscValueA != 0)
-                        summonCreatureToSpell.TryAdd(eff.EffectMiscValueA, spell.ID);
-
-            if (summonCreatureToSpell.Count > 0)
-            {
-                bool inSummonBlock     = false;
-                int  summonCreatureId  = 0;
-                int  summonCastSpellId = 0;
-
-                // Commits the current summon-cast block if both a tracked creature and a
-                // spell ID have been identified; resets tracking state afterwards.
-                void CommitSummonCast()
-                {
-                    if (summonCreatureId == 0 || summonCastSpellId == 0) return;
-
-                    // Always record the raw observation so the IMPLEMENT prompt can surface
-                    // spells that are not (yet) in DBC (e.g. "-Unknown-" creature-cast spells).
-                    if (!_spellHellParserSummonedCasts.TryGetValue(summonCreatureId, out var castSet))
-                        _spellHellParserSummonedCasts[summonCreatureId] = castSet = new HashSet<int>();
-                    castSet.Add(summonCastSpellId);
-
-                    if (!seenCastedIds.Contains(summonCastSpellId) &&
-                        DBC.DBC.SpellInfoStore.TryGetValue(summonCastSpellId, out var sc))
-                    {
-                        seenCastedIds.Add(summonCastSpellId);
-                        _spellHellParserCastedList.Add(sc);
-                        if (summonCreatureToSpell.TryGetValue(summonCreatureId, out var originId))
-                            _spellHellParserCastedByMap[summonCastSpellId] = originId;
-                    }
-                    summonCreatureId  = 0;
-                    summonCastSpellId = 0;
-                }
-
-                foreach (var line2 in File.ReadLines(path))
-                {
-                    if (line2.Contains("SMSG_SPELL_START") || line2.Contains("SMSG_SPELL_GO") ||
-                        line2.Contains("SMSG_SPELL_PREPARE"))
-                    {
-                        CommitSummonCast();
-                        inSummonBlock     = true;
-                        summonCreatureId  = 0;
-                        summonCastSpellId = 0;
-                    }
-                    else if (line2.Length > 0 &&
-                             (line2.StartsWith("ServerToClient:") || line2.StartsWith("ClientToServer:")))
-                    {
-                        CommitSummonCast();
-                        inSummonBlock = false;
-                    }
-
-                    if (!inSummonBlock) continue;
-
-                    // Detect that the caster is one of the tracked summoned creatures.
-                    if (summonCreatureId == 0)
-                    {
-                        var cmg = _casterGuidEntryRegex.Match(line2);
-                        if (cmg.Success && int.TryParse(cmg.Groups[1].Value, out var creId) &&
-                            summonCreatureToSpell.ContainsKey(creId))
-                            summonCreatureId = creId;
-                    }
-
-                    // Detect the spell being cast.
-                    // Primary source: CastID GUID Entry (the Entry of a Cast-type GUID IS the spell ID).
-                    // Fallback: explicit "(Cast) SpellID:" line.
-                    // We deliberately avoid the bare "Entry:" branch of _castedSpellLineRegex
-                    // here because that also appears on the CasterGUID line.
-                    if (summonCastSpellId == 0)
-                    {
-                        var cid = _castIdEntryRegex.Match(line2);
-                        if (cid.Success && int.TryParse(cid.Groups[1].Value, out var castIdEntry))
-                            summonCastSpellId = castIdEntry;
-                    }
-                    if (summonCastSpellId == 0)
-                    {
-                        var cms = _castedSpellLineRegex.Match(line2);
-                        if (cms.Success && cms.Groups[1].Success &&
-                            int.TryParse(cms.Groups[1].Value, out var castId))
-                            summonCastSpellId = castId;
-                    }
-                }
-                CommitSummonCast(); // flush the last block in the file
-
-                _spellHellParserCastedList.Sort(SpellInfo.Comparer.Instance);
-            }
-
-            // Rebuild the filtered views and refresh both ListViews.
-            // ApplyParserClassFilter also pushes the visible IDs to the talent tracker.
-            ApplyParserClassFilter();
-        }
-
-        private void SpellHellParserClassFilterChanged(object? sender, EventArgs e)
-        {
-            ApplyParserClassFilter();
-        }
-
-        /// <summary>
-        /// Rebuilds the view lists from the raw parser lists, applying the current class filter,
-        /// then refreshes both ListViews.
-        /// </summary>
-        private void ApplyParserClassFilter()
-        {
-            uint? family = null;
-            if (_cbSpellHellParserClassFilter != null &&
-                _cbSpellHellParserClassFilter.SelectedIndex > 0)
-            {
-                family = (uint)s_parserClassFilters[
-                    _cbSpellHellParserClassFilter.SelectedIndex - 1].Family;
-            }
-
-            // Known spells: strict family match when a filter is active.
-            _spellHellParserListView = family.HasValue
-                ? _spellHellParserList.Where(s => s.SpellFamilyName == family.Value).ToList()
-                : _spellHellParserList;
-
-            // Casted spells: keep the selected class AND any spell that does NOT belong to
-            // another player-class family (generic procs, triggered effects, etc. are always
-            // kept so they can still be used as reference context).
-            _spellHellParserCastedListView = family.HasValue
-                ? _spellHellParserCastedList
-                      .Where(s => s.SpellFamilyName == family.Value ||
-                                  !_playerClassFamilies.Contains(s.SpellFamilyName))
-                      .ToList()
-                : _spellHellParserCastedList;
-
-            _lvSpellHellParserList.VirtualListSize = _spellHellParserListView.Count;
-            if (_lvSpellHellParserList.SelectedIndices.Count > 0)
-                _lvSpellHellParserList.Items[_lvSpellHellParserList.SelectedIndices[0]].Selected = false;
-            _lvSpellHellParserList.Invalidate();
-
-            _lvSpellHellParserCastedList.VirtualListSize = _spellHellParserCastedListView.Count;
-            if (_lvSpellHellParserCastedList.SelectedIndices.Count > 0)
-                _lvSpellHellParserCastedList.Items[_lvSpellHellParserCastedList.SelectedIndices[0]].Selected = false;
-            _lvSpellHellParserCastedList.Invalidate();
-
-            // Sync the talent-tracker blue rings to match exactly what is visible in both lists.
-            if (_talentTreeControl != null)
-            {
-                var visibleIds = _spellHellParserListView.Select(s => s.ID)
-                    .Concat(_spellHellParserCastedListView.Select(s => s.ID));
-                _talentTreeControl.SetSniffMatchedSpellIds(visibleIds);
-            }
-        }
-
-        private void LvSpellHellParserListSelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (_lvSpellHellParserList.SelectedIndices.Count > 0)
-            {
-                var spell = _spellHellParserListView[_lvSpellHellParserList.SelectedIndices[0]];
-                spell.Write(_rtbSpellHellParser);
-                WriteSpellHellParserRefs(spell);
-            }
-        }
-
-        // Matches all documented spell description variable forms.
-        // Group 1 = explicit spell ID prefix  (e.g. $1227162s1  -> "1227162")
-        // Group 2 = variable letter when explicit ID present     (e.g. "s")
-        // Group 3 = effect index when explicit ID present        (e.g. "1", may be empty)
-        // Group 4 = optional trailing % on explicit-ID form
-        // Group 5 = conditional spell ID  ($?s12598 / $?a386763 -> "12598")
-        // Group 6 = standalone variable letter on current spell  ($s1, $d, $w1 ...)
-        // Group 7 = effect index for standalone var              (may be empty)
-        // Group 8 = optional trailing % on standalone form
-        // Group 9 = multi-character token (MWS, ctrmax, ctrmin, pl, pri, ecix, ec, proccooldown, procrppm)
-        private static readonly System.Text.RegularExpressions.Regex _spellRefRegex =
-            new System.Text.RegularExpressions.Regex(
-                @"\$(\d{4,})([saAdwWmMeotpbhifFjJnqQruxzvV])(\d*)(%?)|\$\?[saAdwWmMeotpbhifFjJnqQruxzvV](\d{4,})|\$([saAdwWmMeotpbhifFjJnqQruxzvV])(\d*)(%?)|\$(MWS|ctrmax|ctrmin|pl|pri|ecix|ec|proccooldown|procrppm)",
-                System.Text.RegularExpressions.RegexOptions.Compiled);
-
-        // Matches lines from SMSG_SPELL_START / SMSG_SPELL_GO / SMSG_SPELL_PREPARE that carry a spell ID.
-        // Only the authoritative "(Cast) SpellID: NNNNN" form is used; the old "Entry: NNNNN"
-        // alternative was removed because it also matched creature GUID fields
-        // (CasterGUID, HitTarget, etc.) causing false spell-ID lookups.
-        private static readonly System.Text.RegularExpressions.Regex _castedSpellLineRegex =
-            new System.Text.RegularExpressions.Regex(
-                @"\(Cast\)\s+SpellID:\s*(\d+)",
-                System.Text.RegularExpressions.RegexOptions.Compiled);
-
-        // Matches "[N] SpellID: NNNNN" lines inside SMSG_AURA_UPDATE blocks.
-        private static readonly System.Text.RegularExpressions.Regex _auraUpdateSpellLineRegex =
-            new System.Text.RegularExpressions.Regex(
-                @"^\s*\[\d+\]\s+SpellID:\s*(\d+)",
-                System.Text.RegularExpressions.RegexOptions.Compiled);
-
-        // Matches "(Cast) OriginalCastID: ... Entry: NNNN (SpellName)" to detect which class spell originated this cast.
-        private static readonly System.Text.RegularExpressions.Regex _originalCastEntryRegex =
-            new System.Text.RegularExpressions.Regex(
-                @"\(Cast\)\s+OriginalCastID:.*\bEntry:\s*(\d+)",
-                System.Text.RegularExpressions.RegexOptions.Compiled);
-
-        // Matches the CasterGUID line of a cast packet and extracts the creature NPC entry ID.
-        // e.g. "(Cast) CasterGUID: Full: 0x... Entry: 223453 (Arcane Phoenix) Low: ..."
-        private static readonly System.Text.RegularExpressions.Regex _casterGuidEntryRegex =
-            new System.Text.RegularExpressions.Regex(
-                @"\(Cast\)\s+CasterGUID:.*\bEntry:\s*(\d+)",
-                System.Text.RegularExpressions.RegexOptions.Compiled);
-
-        // Matches the CastID GUID line to extract the spell ID from its Entry field.
-        // e.g. "(Cast) CastID: Full: 0x... Cast/3 ... Entry: 450461 Low: ..."
-        // The Entry of a Cast-type GUID is the spell being cast, which is the most
-        // reliable source for the summoned-creature's spell ID.
-        private static readonly System.Text.RegularExpressions.Regex _castIdEntryRegex =
-            new System.Text.RegularExpressions.Regex(
-                @"\(Cast\)\s+CastID:.*\bEntry:\s*(\d+)",
-                System.Text.RegularExpressions.RegexOptions.Compiled);
-
-        private static string DescribeVariable(char varLetter, string indexStr, SpellInfo? refSpell, bool isPercent = false)
-        {
-            var pct = isPercent ? "%" : string.Empty;
-            bool hasIdx = int.TryParse(indexStr, out var oneBasedIdx) && oneBasedIdx >= 1;
-            int effectIndex = hasIdx ? oneBasedIdx - 1 : 0;
-
-            SpellEffectInfo? GetEff() => hasIdx && refSpell != null
-                ? refSpell.SpellEffectInfoStore.FirstOrDefault(e => e.EffectIndex == effectIndex)
-                : null;
-
-            switch (varLetter)
-            {
-                case 's' or 'w':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: BasePoints = {eff.EffectBasePoints:F2}{pct}";
-                    return hasIdx ? $"EFFECT {effectIndex}: BasePoints (not found)" : $"s{indexStr} (base points){pct}";
-                }
-                case 'm':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: MinValue = {eff.EffectBasePoints:F2}{pct}";
-                    return hasIdx ? $"EFFECT {effectIndex}: MinValue (not found)" : $"m{indexStr} (min value){pct}";
-                }
-                case 'M':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: MaxValue = {eff.EffectBasePoints:F2}{pct}";
-                    return hasIdx ? $"EFFECT {effectIndex}: MaxValue (not found)" : $"M{indexStr} (max value){pct}";
-                }
-                case 'e':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: EffectAmplitude = {eff.EffectAmplitude:F2}{pct}";
-                    return $"e{indexStr} (EffectAmplitude){pct}";
-                }
-                case 'o':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: TotalPeriodDamage (base={eff.EffectBasePoints:F2}, period={eff.EffectAuraPeriod} ms){pct}";
-                    return $"o{indexStr} (total period damage){pct}";
-                }
-                case 't' or 'p':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: Period = {eff.EffectAuraPeriod} ms{pct}";
-                    return $"{varLetter}{indexStr} (period){pct}";
-                }
-                case 'd':
-                {
-                    if (refSpell != null)
-                    {
-                        var dur = refSpell.DurationEntry?.Duration ?? 0;
-                        return dur != 0 ? $"Duration: {dur} ms" : "Duration: 0";
-                    }
-                    return "d (duration)";
-                }
-                case 'a':
-                {
-                    var eff = GetEff();
-                    if (eff != null && DBC.DBC.SpellRadius.TryGetValue((int)eff.TargetARadius, out var ra))
-                        return $"EFFECT {effectIndex}: MinRadius = {ra.Radius:F2} (index {eff.TargetARadius})";
-                    return $"a{indexStr} (min effect radius)";
-                }
-                case 'A':
-                {
-                    var eff = GetEff();
-                    if (eff != null && DBC.DBC.SpellRadius.TryGetValue((int)eff.TargetBRadius, out var rb))
-                        return $"EFFECT {effectIndex}: MaxRadius = {rb.Radius:F2} (index {eff.TargetBRadius})";
-                    return $"A{indexStr} (max effect radius)";
-                }
-                case 'b':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: BonusFromResource (+{eff.EffectPointsPerResource:F4} per resource){pct}";
-                    return $"b{indexStr} (bonus from resource){pct}";
-                }
-                case 'h':
-                    return refSpell != null ? $"ProcChance: {refSpell.ProcChance}%" : "h (proc chance)";
-                case 'i':
-                {
-                    if (refSpell != null && refSpell.MaxTargets != 0)
-                        return $"MaxTargets: {refSpell.MaxTargets}";
-                    return $"i{indexStr} (max targets)";
-                }
-                case 'f':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: ChainAmplitude = {eff.EffectChainAmplitude:F4} (float)";
-                    return $"f{indexStr} (chain amplitude, float)";
-                }
-                case 'F':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: ChainAmplitude = {(int)eff.EffectChainAmplitude} (int)";
-                    return $"F{indexStr} (chain amplitude, int)";
-                }
-                case 'j' or 'J':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: ChainTargets(jump) = {eff.EffectChainTargets}";
-                    return $"{varLetter}{indexStr} (chain/jump targets)";
-                }
-                case 'n':
-                    return refSpell != null ? $"ProcCharges: {refSpell.ProcCharges}" : "n (charges)";
-                case 'q':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: MiscValueA = {eff.EffectMiscValueA}";
-                    return $"q{indexStr} (miscValueA)";
-                }
-                case 'Q':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: MiscValueA = {eff.EffectMiscValueA} (@TODO)";
-                    return $"Q{indexStr} (miscValueA, @TODO)";
-                }
-                case 'r':
-                    return refSpell?.Range != null
-                        ? $"Range: max {refSpell.Range.MaxRange[1]:F1} yd"
-                        : "r (range)";
-                case 'u':
-                    return refSpell != null ? $"MaxStacks: {refSpell.CumulativeAura}" : "u (max stacks)";
-                case 'x':
-                {
-                    var eff = GetEff();
-                    if (eff != null) return $"EFFECT {effectIndex}: ChainTargets = {eff.EffectChainTargets}";
-                    return $"x{indexStr} (chain targets)";
-                }
-                case 'z':
-                    return "z (bind location)";
-                case 'v':
-                    return refSpell != null ? $"MinTargetLevel: {refSpell.SpellLevel}" : "v (min target level)";
-                case 'V':
-                    return refSpell != null ? $"MaxTargetLevel: {refSpell.MaxTargetLevel}" : "V (max target level)";
-                default:
-                    return varLetter.ToString();
-            }
-        }
-
-        private static string DescribeMultiVarToken(string token, SpellInfo? spell)
-        {
-            return token switch
-            {
-                "MWS"          => "MWS (melee weapon swing time, in seconds)",
-                "ctrmax"       => spell?.ContentTuningID != 0
-                                  ? $"ctrmax (content tuning max level, tuning ID {spell!.ContentTuningID})"
-                                  : "ctrmax (content tuning max level)",
-                "ctrmin"       => spell?.ContentTuningID != 0
-                                  ? $"ctrmin (content tuning min level, tuning ID {spell!.ContentTuningID})"
-                                  : "ctrmin (content tuning min level)",
-                "pl"           => "pl (player level)",
-                "pri"          => "pri (primary stat)",
-                "ecix"         => "ecix (max item level of enchantment from misc value)",
-                "ec"           => "ec (calculated enchantment value from misc value)",
-                "proccooldown" => spell != null
-                                  ? $"proccooldown ({spell.ProcCooldown} ms)"
-                                  : "proccooldown (proc cooldown)",
-                "procrppm"     => spell != null
-                                  ? $"procrppm ({spell.BaseProcRate:F4} per minute)"
-                                  : "procrppm (procs per minute)",
-                _              => token,
-            };
-        }
-
-        private void WriteSpellHellParserRefs(SpellInfo spell)
-        {
-            _rtbSpellHellParserRefs.Clear();
-
-            var rtb = _rtbSpellHellParserRefs;
-            var boldFont = new System.Drawing.Font(rtb.Font, System.Drawing.FontStyle.Bold);
-            var regularFont = new System.Drawing.Font(rtb.Font, System.Drawing.FontStyle.Regular);
-
-            void AppendBold(string text) { rtb.SelectionFont = boldFont; rtb.AppendText(text); rtb.SelectionFont = regularFont; }
-            void AppendLine(string text = "") { rtb.AppendText(text + Environment.NewLine); }
-
-            AppendBold($"Selected spell: {spell.ID} - {spell.NameAndSubname}");
-            AppendLine();
-
-            // ---- Section 1: Casted By ----
-            AppendLine();
-            AppendBold("Casted by:");
-            AppendLine();
-            if (_spellHellParserCastedByMap.TryGetValue(spell.ID, out var castedById)
-                && DBC.DBC.SpellInfoStore.TryGetValue(castedById, out var castedBySpell))
-            {
-                AppendBold($"  {castedById} - {castedBySpell.NameAndSubname}");
-                AppendLine();
-            }
-            else
-            {
-                rtb.AppendText("  (none)" + Environment.NewLine);
-            }
-
-            // ---- Section 2: Self variables ----
-            AppendLine();
-            AppendBold("Spell variables (self):");
-            AppendLine();
-
-            var selfVars = new List<string>();
-            foreach (var text in new[] { spell.Description, spell.Tooltip,
-                spell.DescriptionVariables?.Variables ?? string.Empty })
-            {
-                if (string.IsNullOrEmpty(text))
-                    continue;
-                foreach (System.Text.RegularExpressions.Match m in _spellRefRegex.Matches(text))
-                {
-                    string desc;
-                    if (m.Groups[9].Success)
-                    {
-                        desc = DescribeMultiVarToken(m.Groups[9].Value, spell);
-                    }
-                    else if (m.Groups[6].Success)
-                    {
-                        var varLetter = m.Groups[6].Value[0];
-                        var indexStr = m.Groups[7].Value;
-                        var isPercent = m.Groups[8].Value == "%";
-                        desc = DescribeVariable(varLetter, indexStr, spell, isPercent);
-                    }
-                    else
-                        continue;
-                    if (!selfVars.Contains(desc))
-                        selfVars.Add(desc);
-                }
-            }
-
-            if (selfVars.Count == 0)
-                rtb.AppendText("  (none)" + Environment.NewLine);
-            else
-                foreach (var v in selfVars)
-                    rtb.AppendText($"  \u2192 {v}{Environment.NewLine}");
-
-            // ---- Section 3: Referenced spells ----
-            AppendLine();
-            AppendBold("Referenced spells:");
-            AppendLine();
-
-            // Maps referenced spell ID -> deduplicated list of variable usages pulled from it
-            var referencedIds = new SortedDictionary<int, List<string>>();
-
-            void AddRef(int refId, string usage)
-            {
-                if (refId == spell.ID)
-                    return;
-                if (!referencedIds.TryGetValue(refId, out var usages))
-                    referencedIds[refId] = usages = new List<string>();
-                if (!usages.Contains(usage))
-                    usages.Add(usage);
-            }
-
-            foreach (var text in new[] { spell.Description, spell.Tooltip,
-                spell.DescriptionVariables?.Variables ?? string.Empty })
-            {
-                if (string.IsNullOrEmpty(text))
-                    continue;
-
-                foreach (System.Text.RegularExpressions.Match m in _spellRefRegex.Matches(text))
-                {
-                    if (m.Groups[1].Success)
-                    {
-                        // $NNNNletter[index][%] -- explicit foreign spell reference
-                        if (int.TryParse(m.Groups[1].Value, out var explicitId))
-                        {
-                            DBC.DBC.SpellInfoStore.TryGetValue(explicitId, out var refSpellForVar);
-                            var isPercent = m.Groups[4].Value == "%";
-                            AddRef(explicitId, DescribeVariable(m.Groups[2].Value[0], m.Groups[3].Value, refSpellForVar, isPercent));
-                        }
-                    }
-                    else if (m.Groups[5].Success)
-                    {
-                        // $?s/a NNNNN -- conditional check against another spell
-                        if (int.TryParse(m.Groups[5].Value, out var condId))
-                            AddRef(condId, "(conditional check)");
-                    }
-                }
-            }
-
-            if (referencedIds.Count == 0)
-            {
-                rtb.AppendText("  (none)" + Environment.NewLine);
-                return;
-            }
-
-            foreach (var (refId, usages) in referencedIds)
-            {
-                var name = DBC.DBC.SpellInfoStore.TryGetValue(refId, out var refSpell)
-                    ? refSpell.NameAndSubname
-                    : "(not found)";
-                AppendBold($"  {refId} - {name}");
-                AppendLine();
-                foreach (var usage in usages)
-                    rtb.AppendText($"    \u2192 {usage}{Environment.NewLine}");
-            }
-        }
-
-        private void LvSpellHellParserListRetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e)
-        {
-            e.Item = new ListViewItem([_spellHellParserListView[e.ItemIndex].ID.ToString(), _spellHellParserListView[e.ItemIndex].NameAndSubname]);
-        }
-
-        private void LvSpellHellParserCastedListSelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (_lvSpellHellParserCastedList.SelectedIndices.Count > 0)
-            {
-                var spell = _spellHellParserCastedListView[_lvSpellHellParserCastedList.SelectedIndices[0]];
-                spell.Write(_rtbSpellHellParser);
-                WriteSpellHellParserRefs(spell);
-            }
-        }
-
-        private void LvSpellHellParserCastedListRetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e)
-        {
-            var spell = _spellHellParserCastedListView[e.ItemIndex];
-            var fromBy = string.Empty;
-
-            // "By:" – this spell was triggered by another class spell (OriginalCastID)
-            if (_spellHellParserCastedByMap.TryGetValue(spell.ID, out var byId) &&
-                DBC.DBC.SpellInfoStore.TryGetValue(byId, out var bySpell))
-            {
-                fromBy = $"By: {bySpell.Name}";
-            }
-            else
-            {
-                // "From:" – this spell triggered other spells (reverse lookup)
-                var triggeredName = _spellHellParserCastedByMap
-                    .Where(kvp => kvp.Value == spell.ID)
-                    .Select(kvp => DBC.DBC.SpellInfoStore.TryGetValue(kvp.Key, out var s) ? s.Name : null)
-                    .FirstOrDefault(n => n != null);
-                if (triggeredName != null)
-                    fromBy = $"From: {triggeredName}";
-            }
-
-            e.Item = new ListViewItem([spell.ID.ToString(), spell.NameAndSubname, fromBy]);
-        }
-
-        #endregion
 
         #region SPELL INFO PAGE
 
@@ -1873,7 +1168,7 @@ namespace SpellWork.Forms
 
         private void LoadProcFromDBClick(object sender, EventArgs e)
         {
-            tabControl1.SelectedIndex = 4;
+            tabControl1.SelectedIndex = 3;
             _tbLoadProcSpellId.Text = _tbNewProcSpellId.Text;
         }
 
@@ -2271,7 +1566,7 @@ namespace SpellWork.Forms
             _tvFamilyTree.SetMask(proc.SpellFamilyMask);
             PopulateProcAdditionalInfo();
 
-            tabControl1.SelectedIndex = 3;
+            tabControl1.SelectedIndex = 2;
         }
 
         #endregion

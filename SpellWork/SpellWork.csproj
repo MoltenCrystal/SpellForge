@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <OutputType>WinExe</OutputType>
-    <ApplicationIcon>SpellHell.ico</ApplicationIcon>
+    <ApplicationIcon>SpellForge.ico</ApplicationIcon>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyTitle>SpellWork</AssemblyTitle>
     <Description>SpellWork</Description>
@@ -11,7 +11,7 @@
     <Copyright>Copyright © LordJZ and Konctantin 2010</Copyright>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="SpellHell.ico" />
+    <Content Include="SpellForge.ico" />
     <Content Include="talentTracker\classIcons\*.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

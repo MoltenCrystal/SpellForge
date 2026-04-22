@@ -138,7 +138,7 @@ namespace SpellWork.Forms
                 }
             }
 
-            // Order: [0]=class, [1]=hero, [2]=spec  (same as SpellHellTrackerDb.s_treeTypes)
+            // Order: [0]=class, [1]=hero, [2]=spec  (same as SpellForgeTrackerDb.s_treeTypes)
             return new ParseResult
             {
                 Trees =
