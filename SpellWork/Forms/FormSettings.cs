@@ -1,6 +1,7 @@
 ﻿using SpellWork.Database;
 using SpellWork.Properties;
 using System;
+using System.IO;
 using System.Windows.Forms;
 
 namespace SpellWork.Forms
@@ -31,6 +32,7 @@ namespace SpellWork.Forms
             Settings.Default.DbcPath = _tbPath.Text;
             Settings.Default.GtPath = _tbGtPath.Text;
             Settings.Default.Locale = _tbLocale.Text;
+            Settings.Default.RepoPath = _tbRepoPath.Text;
 
             MySqlConnection.TestConnect();
 
@@ -59,6 +61,8 @@ namespace SpellWork.Forms
             _tbPath.Text = Settings.Default.DbcPath;
             _tbGtPath.Text = Settings.Default.GtPath;
             _tbLocale.Text = Settings.Default.Locale;
+            _tbRepoPath.Text = Settings.Default.RepoPath;
+            UpdateRepoValidation();
         }
 
         private void FormSettings_KeyDown(object sender, KeyEventArgs e)
@@ -73,6 +77,45 @@ namespace SpellWork.Forms
             {
                 Settings.Default.DbcPath = folderBrowserDialog1.SelectedPath;
                 Settings.Default.Save();
+            }
+        }
+
+        private void _bBrowseRepo_Click(object sender, EventArgs e)
+        {
+            folderBrowserDialog1.SelectedPath = _tbRepoPath.Text;
+            if (folderBrowserDialog1.ShowDialog() == DialogResult.OK)
+            {
+                _tbRepoPath.Text = folderBrowserDialog1.SelectedPath;
+                UpdateRepoValidation();
+            }
+        }
+
+        private void _tbRepoPath_TextChanged(object sender, EventArgs e)
+        {
+            UpdateRepoValidation();
+        }
+
+        private void UpdateRepoValidation()
+        {
+            var path = _tbRepoPath.Text.Trim();
+            if (string.IsNullOrEmpty(path))
+            {
+                _lblRepoValidation.Text = "";
+                return;
+            }
+
+            var sqlDir    = Path.Combine(path, "sql", "updates", "world", "WorldsoulPvP");
+            var scriptDir = Path.Combine(path, "src", "server", "scripts", "WorldsoulPvP");
+
+            if (Directory.Exists(sqlDir) && Directory.Exists(scriptDir))
+            {
+                _lblRepoValidation.Text      = "\u2713 Valid repo path";
+                _lblRepoValidation.ForeColor = System.Drawing.Color.Green;
+            }
+            else
+            {
+                _lblRepoValidation.Text      = "\u2717 Missing required subdirectories";
+                _lblRepoValidation.ForeColor = System.Drawing.Color.Red;
             }
         }
     }

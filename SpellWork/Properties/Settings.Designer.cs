@@ -154,5 +154,17 @@ namespace SpellWork.Properties {
                 this["Locale"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string RepoPath {
+            get {
+                return ((string)(this["RepoPath"]));
+            }
+            set {
+                this["RepoPath"] = value;
+            }
+        }
     }
 }

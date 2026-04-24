@@ -52,8 +52,20 @@
             this._tbLocale = new System.Windows.Forms.TextBox();
             this._cbReadOnlyDB = new System.Windows.Forms.CheckBox();
             this._gbDB2Settings = new System.Windows.Forms.GroupBox();
+            this._tabControl = new System.Windows.Forms.TabControl();
+            this._tabPageDbDbc = new System.Windows.Forms.TabPage();
+            this._tabPageRepo = new System.Windows.Forms.TabPage();
+            this._gbRepoPath = new System.Windows.Forms.GroupBox();
+            this._lRepoRoot = new System.Windows.Forms.Label();
+            this._tbRepoPath = new System.Windows.Forms.TextBox();
+            this._bBrowseRepo = new System.Windows.Forms.Button();
+            this._lblRepoValidation = new System.Windows.Forms.Label();
             this._gbDbSetting.SuspendLayout();
             this._gbDB2Settings.SuspendLayout();
+            this._tabControl.SuspendLayout();
+            this._tabPageDbDbc.SuspendLayout();
+            this._tabPageRepo.SuspendLayout();
+            this._gbRepoPath.SuspendLayout();
             this.SuspendLayout();
             // 
             // _gbDbSetting
@@ -196,7 +208,7 @@
             // 
             // _bSaveSettings
             // 
-            this._bSaveSettings.Location = new System.Drawing.Point(180, 297);
+            this._bSaveSettings.Location = new System.Drawing.Point(180, 328);
             this._bSaveSettings.Name = "_bSaveSettings";
             this._bSaveSettings.Size = new System.Drawing.Size(95, 23);
             this._bSaveSettings.TabIndex = 7;
@@ -267,23 +279,104 @@
             this._gbDB2Settings.TabStop = false;
             this._gbDB2Settings.Text = "DB2";
             // 
+            // _lRepoRoot
+            // 
+            this._lRepoRoot.AutoSize = true;
+            this._lRepoRoot.Location = new System.Drawing.Point(6, 22);
+            this._lRepoRoot.Name = "_lRepoRoot";
+            this._lRepoRoot.Size = new System.Drawing.Size(116, 13);
+            this._lRepoRoot.TabIndex = 0;
+            this._lRepoRoot.Text = "WorldsoulPvP Repo Root";
+            // 
+            // _tbRepoPath
+            // 
+            this._tbRepoPath.Location = new System.Drawing.Point(6, 45);
+            this._tbRepoPath.Name = "_tbRepoPath";
+            this._tbRepoPath.Size = new System.Drawing.Size(193, 20);
+            this._tbRepoPath.TabIndex = 1;
+            this._tbRepoPath.TextChanged += new System.EventHandler(this._tbRepoPath_TextChanged);
+            // 
+            // _bBrowseRepo
+            // 
+            this._bBrowseRepo.Location = new System.Drawing.Point(204, 44);
+            this._bBrowseRepo.Name = "_bBrowseRepo";
+            this._bBrowseRepo.Size = new System.Drawing.Size(55, 22);
+            this._bBrowseRepo.TabIndex = 2;
+            this._bBrowseRepo.Text = "Browse...";
+            this._bBrowseRepo.UseVisualStyleBackColor = true;
+            this._bBrowseRepo.Click += new System.EventHandler(this._bBrowseRepo_Click);
+            // 
+            // _lblRepoValidation
+            // 
+            this._lblRepoValidation.AutoSize = true;
+            this._lblRepoValidation.Location = new System.Drawing.Point(6, 74);
+            this._lblRepoValidation.Name = "_lblRepoValidation";
+            this._lblRepoValidation.Size = new System.Drawing.Size(0, 13);
+            this._lblRepoValidation.TabIndex = 3;
+            this._lblRepoValidation.Text = "";
+            // 
+            // _gbRepoPath
+            // 
+            this._gbRepoPath.Controls.Add(this._lRepoRoot);
+            this._gbRepoPath.Controls.Add(this._tbRepoPath);
+            this._gbRepoPath.Controls.Add(this._bBrowseRepo);
+            this._gbRepoPath.Controls.Add(this._lblRepoValidation);
+            this._gbRepoPath.Location = new System.Drawing.Point(12, 12);
+            this._gbRepoPath.Name = "_gbRepoPath";
+            this._gbRepoPath.Size = new System.Drawing.Size(263, 100);
+            this._gbRepoPath.TabIndex = 0;
+            this._gbRepoPath.TabStop = false;
+            this._gbRepoPath.Text = "WorldsoulPvP Repo";
+            // 
+            // _tabPageDbDbc
+            // 
+            this._tabPageDbDbc.Controls.Add(this._gbDbSetting);
+            this._tabPageDbDbc.Controls.Add(this._cbUseDB);
+            this._tabPageDbDbc.Controls.Add(this._bTestConnect);
+            this._tabPageDbDbc.Controls.Add(this._cbReadOnlyDB);
+            this._tabPageDbDbc.Controls.Add(this._gbDB2Settings);
+            this._tabPageDbDbc.Location = new System.Drawing.Point(4, 22);
+            this._tabPageDbDbc.Name = "_tabPageDbDbc";
+            this._tabPageDbDbc.Padding = new System.Windows.Forms.Padding(3);
+            this._tabPageDbDbc.Size = new System.Drawing.Size(281, 298);
+            this._tabPageDbDbc.TabIndex = 0;
+            this._tabPageDbDbc.Text = "DB & DBC";
+            this._tabPageDbDbc.UseVisualStyleBackColor = true;
+            // 
+            // _tabPageRepo
+            // 
+            this._tabPageRepo.Controls.Add(this._gbRepoPath);
+            this._tabPageRepo.Location = new System.Drawing.Point(4, 22);
+            this._tabPageRepo.Name = "_tabPageRepo";
+            this._tabPageRepo.Padding = new System.Windows.Forms.Padding(3);
+            this._tabPageRepo.Size = new System.Drawing.Size(281, 298);
+            this._tabPageRepo.TabIndex = 1;
+            this._tabPageRepo.Text = "Repo Path";
+            this._tabPageRepo.UseVisualStyleBackColor = true;
+            // 
+            // _tabControl
+            // 
+            this._tabControl.Controls.Add(this._tabPageDbDbc);
+            this._tabControl.Controls.Add(this._tabPageRepo);
+            this._tabControl.Location = new System.Drawing.Point(0, 0);
+            this._tabControl.Name = "_tabControl";
+            this._tabControl.SelectedIndex = 0;
+            this._tabControl.Size = new System.Drawing.Size(289, 324);
+            this._tabControl.TabIndex = 0;
+            // 
             // FormSettings
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(287, 332);
-            this.Controls.Add(this._gbDB2Settings);
-            this.Controls.Add(this._cbReadOnlyDB);
+            this.ClientSize = new System.Drawing.Size(289, 357);
+            this.Controls.Add(this._tabControl);
             this.Controls.Add(this._bSaveSettings);
-            this.Controls.Add(this._bTestConnect);
-            this.Controls.Add(this._cbUseDB);
-            this.Controls.Add(this._gbDbSetting);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.KeyPreview = true;
             this.MaximizeBox = false;
-            this.MaximumSize = new System.Drawing.Size(303, 371);
+            this.MaximumSize = new System.Drawing.Size(305, 396);
             this.MinimizeBox = false;
-            this.MinimumSize = new System.Drawing.Size(303, 371);
+            this.MinimumSize = new System.Drawing.Size(305, 396);
             this.Name = "FormSettings";
             this.ShowInTaskbar = false;
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
@@ -294,8 +387,13 @@
             this._gbDbSetting.PerformLayout();
             this._gbDB2Settings.ResumeLayout(false);
             this._gbDB2Settings.PerformLayout();
+            this._gbRepoPath.ResumeLayout(false);
+            this._gbRepoPath.PerformLayout();
+            this._tabPageDbDbc.ResumeLayout(false);
+            this._tabPageDbDbc.PerformLayout();
+            this._tabPageRepo.ResumeLayout(false);
+            this._tabControl.ResumeLayout(false);
             this.ResumeLayout(false);
-            this.PerformLayout();
 
         }
 
@@ -324,5 +422,13 @@
         private System.Windows.Forms.TextBox _tbLocale;
         private System.Windows.Forms.CheckBox _cbReadOnlyDB;
         private System.Windows.Forms.GroupBox _gbDB2Settings;
+        private System.Windows.Forms.TabControl _tabControl;
+        private System.Windows.Forms.TabPage _tabPageDbDbc;
+        private System.Windows.Forms.TabPage _tabPageRepo;
+        private System.Windows.Forms.GroupBox _gbRepoPath;
+        private System.Windows.Forms.Label _lRepoRoot;
+        private System.Windows.Forms.TextBox _tbRepoPath;
+        private System.Windows.Forms.Button _bBrowseRepo;
+        private System.Windows.Forms.Label _lblRepoValidation;
     }
 }

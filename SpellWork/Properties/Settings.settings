@@ -35,5 +35,8 @@
     <Setting Name="Locale" Type="System.String" Scope="User">
       <Value Profile="(Default)">enUS</Value>
     </Setting>
+    <Setting Name="RepoPath" Type="System.String" Scope="User">
+      <Value Profile="(Default)"></Value>
+    </Setting>
   </Settings>
 </SettingsFile>
