@@ -91,9 +91,9 @@ CREATE TABLE IF NOT EXISTS `sniff_damage_events` (
   `school_mask`   TINYINT UNSIGNED NOT NULL DEFAULT 0,
   `damage`        INT UNSIGNED    NOT NULL DEFAULT 0,
   `overkill`      INT             NOT NULL DEFAULT 0,
-  `absorbed`      INT UNSIGNED    NOT NULL DEFAULT 0,
-  `resisted`      INT UNSIGNED    NOT NULL DEFAULT 0,
-  `blocked`       INT UNSIGNED    NOT NULL DEFAULT 0,
+  `absorbed`      INT             NOT NULL DEFAULT 0,
+  `resisted`      INT             NOT NULL DEFAULT 0,
+  `blocked`       INT             NOT NULL DEFAULT 0,
   `is_periodic`   TINYINT(1)      NOT NULL DEFAULT 0,
   `is_critical`   TINYINT(1)      NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS `sniff_heal_events` (
   `target_guid`   VARCHAR(34)     NOT NULL DEFAULT '',
   `heal`          INT UNSIGNED    NOT NULL DEFAULT 0,
   `overheal`      INT             NOT NULL DEFAULT 0,
-  `absorbed`      INT UNSIGNED    NOT NULL DEFAULT 0,
+  `absorbed`      INT             NOT NULL DEFAULT 0,
   `is_periodic`   TINYINT(1)      NOT NULL DEFAULT 0,
   `is_critical`   TINYINT(1)      NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
@@ -162,7 +162,7 @@ CREATE TABLE IF NOT EXISTS `sniff_periodic_events` (
   `school_mask`   TINYINT UNSIGNED NOT NULL DEFAULT 0,
   `amount`        INT             NOT NULL DEFAULT 0,
   `over_amount`   INT             NOT NULL DEFAULT 0,
-  `absorbed`      INT UNSIGNED    NOT NULL DEFAULT 0,
+  `absorbed`      INT             NOT NULL DEFAULT 0,
   `is_critical`   TINYINT(1)      NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `idx_spell_id`   (`spell_id`),
@@ -173,8 +173,13 @@ CREATE TABLE IF NOT EXISTS `sniff_periodic_events` (
 -- Migrations: fix column types for existing installations.
 -- ALTER TABLE MODIFY COLUMN is safe to re-run on already-correct schemas.
 -- --------------------------------------------------------
-ALTER TABLE `sniff_damage_events` MODIFY COLUMN `overkill` INT NOT NULL DEFAULT 0;
-ALTER TABLE `sniff_heal_events`   MODIFY COLUMN `overheal` INT NOT NULL DEFAULT 0;
+ALTER TABLE `sniff_damage_events` MODIFY COLUMN `overkill`  INT NOT NULL DEFAULT 0;
+ALTER TABLE `sniff_heal_events`   MODIFY COLUMN `overheal`  INT NOT NULL DEFAULT 0;
+ALTER TABLE `sniff_damage_events` MODIFY COLUMN `absorbed`  INT NOT NULL DEFAULT 0;
+ALTER TABLE `sniff_damage_events` MODIFY COLUMN `resisted`  INT NOT NULL DEFAULT 0;
+ALTER TABLE `sniff_damage_events` MODIFY COLUMN `blocked`   INT NOT NULL DEFAULT 0;
+ALTER TABLE `sniff_heal_events`   MODIFY COLUMN `absorbed`  INT NOT NULL DEFAULT 0;
+ALTER TABLE `sniff_periodic_events` MODIFY COLUMN `absorbed` INT NOT NULL DEFAULT 0;
 
 -- Recomputed by SniffImporter after each import batch.
 -- Fast primary-key lookup; avoids aggregation at query time.

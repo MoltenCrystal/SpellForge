@@ -500,9 +500,9 @@ namespace SpellWork.Database
                 else if (TryGetTaggedInt(t, "Damage", out int d))       damage     = d;
                 else if (TryGetTaggedInt(t, "OverKill", out int ok))    overkill   = Math.Max(0, ok);
                 else if (TryGetTaggedInt(t, "SchoolMask", out int sm))  schoolMask = sm;
-                else if (TryGetTaggedInt(t, "Absorbed", out int ab))    absorbed   = ab;
-                else if (TryGetTaggedInt(t, "Resisted", out int re))    resisted   = re;
-                else if (TryGetTaggedInt(t, "ShieldBlock", out int bl)) blocked    = bl;
+                else if (TryGetTaggedInt(t, "Absorbed", out int ab))    absorbed   = Math.Max(0, ab);
+                else if (TryGetTaggedInt(t, "Resisted", out int re))    resisted   = Math.Max(0, re);
+                else if (TryGetTaggedInt(t, "ShieldBlock", out int bl)) blocked    = Math.Max(0, bl);
                 else if (t.StartsWith("Periodic:", StringComparison.Ordinal))
                     isPeriodic = GetValue(t).Equals("True", StringComparison.OrdinalIgnoreCase);
                 // Critical is embedded in Flags bitmask — HitInfo flag HITINFO_CRITICALHIT = 0x02000000
@@ -558,7 +558,7 @@ namespace SpellWork.Database
                 { spellId = sid; gotSpellId = true; }
                 else if (TryGetTaggedInt(t, "Health", out int h))       heal     = h;
                 else if (TryGetTaggedInt(t, "OverHeal", out int oh))    overheal = Math.Max(0, oh);
-                else if (TryGetTaggedInt(t, "Absorbed", out int ab))    absorbed = ab;
+                else if (TryGetTaggedInt(t, "Absorbed", out int ab))    absorbed = Math.Max(0, ab);
                 else if (t.StartsWith("Crit:", StringComparison.Ordinal))
                     isCrit = GetValue(t).Equals("True", StringComparison.OrdinalIgnoreCase);
             }
@@ -648,7 +648,7 @@ namespace SpellWork.Database
                 else if (TryGetTaggedInt(t, "Amount", out int a))                amount     = a;
                 else if (TryGetTaggedInt(t, "OverHealOrKill", out int oh))       overAmount = Math.Max(0, oh);
                 else if (TryGetTaggedInt(t, "SchoolMaskOrPower", out int sm))    schoolMask = sm;
-                else if (TryGetTaggedInt(t, "AbsorbedOrAmplitude", out int ab))  absorbed   = ab;
+                else if (TryGetTaggedInt(t, "AbsorbedOrAmplitude", out int ab))  absorbed   = Math.Max(0, ab);
                 else if (t.StartsWith("Crit:", StringComparison.Ordinal))
                     isCrit = GetValue(t).Equals("True", StringComparison.OrdinalIgnoreCase);
             }
