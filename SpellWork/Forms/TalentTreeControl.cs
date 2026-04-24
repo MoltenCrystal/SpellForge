@@ -74,6 +74,7 @@ namespace SpellWork.Forms
 
         private int _iconBarHoverIndex = -1;  // index of hovered icon (-1 = none)
         private int _selectedIconIndex  = -1;  // index of selected (clicked) icon
+        private bool _sniffToggleHovered = false;  // whether the sniff toggle button is hovered
 
         // Raised when the user picks class → spec → hero talent from the dropdown
         public event Action<string, string, string>? ClassSpecHeroSelected;
@@ -418,6 +419,54 @@ namespace SpellWork.Forms
             using (var sep = new Pen(Color.FromArgb(80, 100, 80, 30), 1f))
                 g.DrawLine(sep, 0, IconBarHeight - 1, barW, IconBarHeight - 1);
 
+            // Sniff toggle button (far left of icon bar)
+            {
+                var toggleR = GetSniffToggleRect();
+                bool sniffOn  = ShowSniffRings;
+                bool togHov   = _sniffToggleHovered;
+
+                // Tile background
+                using (var tileBg = new SolidBrush(
+                    sniffOn  ? Color.FromArgb(200, 10, 45, 80)
+                    : togHov ? Color.FromArgb(180, 40, 40, 55)
+                             : Color.FromArgb(160, 22, 22, 30)))
+                using (var tilePath = RoundedRect(toggleR, IconCornerR))
+                    g.FillPath(tileBg, tilePath);
+
+                // Border – cyan when active, muted otherwise
+                var tBorderCol = sniffOn
+                    ? Color.FromArgb(255, 40, 200, 255)
+                    : togHov
+                    ? Color.FromArgb(200, 80, 140, 180)
+                    : Color.FromArgb(130, 70, 70, 80);
+                using (var bp   = new Pen(tBorderCol, (sniffOn || togHov) ? 1.5f : 1f))
+                using (var bPath = RoundedRect(toggleR, IconCornerR))
+                    g.DrawPath(bp, bPath);
+
+                // Outer glow when active
+                if (sniffOn)
+                {
+                    int gp = 3;
+                    var glowR = new Rectangle(toggleR.X - gp, toggleR.Y - gp,
+                                              toggleR.Width + gp * 2, toggleR.Height + gp * 2);
+                    using (var glowPen = new Pen(Color.FromArgb(70, 40, 180, 255), 2.5f))
+                    using (var glowPath = RoundedRect(glowR, IconCornerR + gp))
+                        g.DrawPath(glowPen, glowPath);
+                }
+
+                // * symbol centred in the tile
+                using var asteriskFont = new Font("Segoe UI", 20f, FontStyle.Bold);
+                var asterisk = "*";
+                var asz = g.MeasureString(asterisk, asteriskFont);
+                using var asteriskBrush = new SolidBrush(
+                    sniffOn  ? Color.FromArgb(255, 40, 200, 255)
+                    : togHov ? Color.FromArgb(200, 100, 160, 200)
+                             : Color.FromArgb(160, 90, 100, 120));
+                g.DrawString(asterisk, asteriskFont, asteriskBrush,
+                    toggleR.X + (toggleR.Width  - asz.Width)  / 2f,
+                    toggleR.Y + (toggleR.Height - asz.Height) / 2f);
+            }
+
             for (int i = 0; i < n; i++)
             {
                 int ix   = startX + i * (IconSize + IconPad);
@@ -604,14 +653,52 @@ namespace SpellWork.Forms
             // Sniff-match indicator: bright electric-blue outer ring
             if (ShowSniffRings && node.ActiveSpellId > 0 && _sniffMatchedSpellIds.Contains(node.ActiveSpellId))
             {
-                int bp = node.IsGate ? 8 : 7;
-                var blueR = new Rectangle(r.X - bp, r.Y - bp, r.Width + bp * 2, r.Height + bp * 2);
-                // Soft halo
-                using var blueHalo = new Pen(Color.FromArgb(80, 40, 180, 255), node.IsGate ? 6f : 5f);
-                g.DrawEllipse(blueHalo, blueR);
-                // Bright ring
-                using var blueRing = new Pen(Color.FromArgb(255, 40, 200, 255), 2.2f);
-                g.DrawEllipse(blueRing, blueR);
+                float fontSize = node.IsGate ? 22f : 18f;
+                float area     = node.IsGate ? 28f : 22f;
+                float starCx   = r.Right  - 2f;
+                float starCy   = r.Top    + 2f;
+                var   drawRect = new RectangleF(starCx - area / 2f, starCy - area / 2f, area, area);
+
+                using var sf = new StringFormat(StringFormat.GenericTypographic)
+                    { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+
+                // Simulate glow by drawing the * in 8 directions at increasing offsets,
+                // then layering progressively brighter/smaller passes on top.
+                float[] offsets = [3.5f, 2.5f, 1.5f];
+                int[]   alphas  = [30, 55, 90];
+                using (var spreadFont = new Font("Segoe UI", fontSize + 4f, FontStyle.Bold))
+                {
+                    for (int gi = 0; gi < offsets.Length; gi++)
+                    {
+                        float o = offsets[gi];
+                        using var spreadBrush = new SolidBrush(Color.FromArgb(alphas[gi], 30, 170, 255));
+                        float[] dx = [-o, o, 0, 0, -o,  o, -o, o];
+                        float[] dy = [0,  0, -o, o, -o, -o,  o, o];
+                        for (int d = 0; d < 8; d++)
+                            g.DrawString("*", spreadFont, spreadBrush,
+                                new RectangleF(drawRect.X + dx[d], drawRect.Y + dy[d],
+                                               drawRect.Width, drawRect.Height), sf);
+                    }
+                }
+
+                // Wide bloom
+                using (var bloomFont  = new Font("Segoe UI", fontSize + 6f, FontStyle.Bold))
+                using (var bloomBrush = new SolidBrush(Color.FromArgb(45, 20, 140, 255)))
+                {
+                    var bloomRect = new RectangleF(drawRect.X - 5, drawRect.Y - 5,
+                                                   drawRect.Width + 10, drawRect.Height + 10);
+                    g.DrawString("*", bloomFont, bloomBrush, bloomRect, sf);
+                }
+
+                // Inner glow
+                using (var innerFont  = new Font("Segoe UI", fontSize + 2f, FontStyle.Bold))
+                using (var innerBrush = new SolidBrush(Color.FromArgb(160, 60, 200, 255)))
+                    g.DrawString("*", innerFont, innerBrush, drawRect, sf);
+
+                // Bright white-cyan core
+                using (var coreFont  = new Font("Segoe UI", fontSize, FontStyle.Bold))
+                using (var coreBrush = new SolidBrush(Color.FromArgb(255, 180, 235, 255)))
+                    g.DrawString("*", coreFont, coreBrush, drawRect, sf);
             }
 
             // Choice-node badge: two small overlapping circles at bottom-right
@@ -636,6 +723,15 @@ namespace SpellWork.Forms
         protected override void OnMouseClick(MouseEventArgs e)
         {
             base.OnMouseClick(e);
+
+            // Sniff toggle button
+            if (e.Button == MouseButtons.Left && HitTestSniffToggle(new Point(e.X, e.Y)))
+            {
+                ShowSniffRings = !ShowSniffRings;
+                _tip.SetToolTip(this, ShowSniffRings ? "Hide sniff data" : "Show sniff data");
+                Invalidate();
+                return;
+            }
 
             if (e.Button == MouseButtons.Left)
             {
@@ -1446,6 +1542,20 @@ namespace SpellWork.Forms
         {
             base.OnMouseMove(e);
 
+            // Sniff toggle button hover
+            bool newToggleHov = HitTestSniffToggle(new Point(e.X, e.Y));
+            if (newToggleHov != _sniffToggleHovered)
+            {
+                _sniffToggleHovered = newToggleHov;
+                if (newToggleHov)
+                    _tip.SetToolTip(this, ShowSniffRings ? "Hide sniff data" : "Show sniff data");
+                else
+                    _tip.SetToolTip(this, string.Empty);
+                Invalidate();
+                return;
+            }
+            if (newToggleHov) return;  // don't process further while over toggle
+
             // Icon bar is fixed – use raw screen coordinates.
             int newIconHover = HitTestIconBar(new Point(e.X, e.Y));
             if (newIconHover != _iconBarHoverIndex)
@@ -1494,12 +1604,25 @@ namespace SpellWork.Forms
             return -1;
         }
 
+        private Rectangle GetSniffToggleRect()
+        {
+            int iconY = (IconBarHeight - IconSize) / 2;
+            return new Rectangle(4, iconY, IconSize, IconSize);
+        }
+
+        private bool HitTestSniffToggle(Point pt)
+        {
+            if (pt.Y < 0 || pt.Y >= IconBarHeight) return false;
+            return GetSniffToggleRect().Contains(pt);
+        }
+
         protected override void OnMouseLeave(EventArgs e)
         {
             base.OnMouseLeave(e);
-            bool needRepaint = _hovered != null || _iconBarHoverIndex >= 0;
+            bool needRepaint = _hovered != null || _iconBarHoverIndex >= 0 || _sniffToggleHovered;
             _hovered = null;
             _iconBarHoverIndex = -1;
+            _sniffToggleHovered = false;
             if (needRepaint) Invalidate();
         }
 

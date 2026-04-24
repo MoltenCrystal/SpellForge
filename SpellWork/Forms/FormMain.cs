@@ -236,6 +236,9 @@ namespace SpellWork.Forms
                 $"Unique spells:      {result.AffectedSpellIds.Count:N0}",
                 "SpellForge ? Import Sniff",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            // Refresh sniff badges on the talent tree with the new data
+            RefreshSniffIds();
         }
 
         private void ExtractEnumsClick(object sender, EventArgs e)
@@ -546,6 +549,7 @@ namespace SpellWork.Forms
                 if (dbTrees != null)
                 {
                     _talentTreeControl.SetTrees(dbTrees);
+                    RefreshSniffIds();
                     if (_lblTrackerStatus != null)
                         _lblTrackerStatus.Text =
                             $"Loaded from DB ? {className} / {specName} / {heroName}  |  " +
@@ -556,10 +560,33 @@ namespace SpellWork.Forms
 
             // No data available ? show empty canvas.
             _talentTreeControl.SetTrees(Array.Empty<TalentTree>());
+            RefreshSniffIds();
             if (_lblTrackerStatus != null)
                 _lblTrackerStatus.Text =
                     $"No data for {className} / {specName} / {heroName}. " +
                     "Import the SQL files first, then re-select.";
+        }
+
+        /// <summary>
+        /// Queries the sniff database for all spell IDs that have been observed in any
+        /// sniff capture and passes them to the talent tree control for badge rendering.
+        /// Safe to call when the sniff DB is not connected (results in an empty set).
+        /// </summary>
+        private void RefreshSniffIds()
+        {
+            if (_talentTreeControl == null) return;
+
+            if (!Database.SpellForgeSniffsDb.CanConnect())
+            {
+                _talentTreeControl.SetSniffMatchedSpellIds(Array.Empty<int>());
+                return;
+            }
+
+            var ids = new HashSet<int>(Database.SpellForgeSniffsDb.GetAllCastSpellIds());
+            foreach (var id in Database.SpellForgeSniffsDb.GetAllEventSpellIds())
+                ids.Add(id);
+
+            _talentTreeControl.SetSniffMatchedSpellIds(ids);
         }
 
         private void OnNodeOpenInSpellInfo(TalentNode node)
@@ -855,7 +882,7 @@ namespace SpellWork.Forms
             IncludeWithTriggerChain(talentSpell.CasterAuraSpell);
             IncludeWithTriggerChain(talentSpell.TargetAuraSpell);
 
-            // Pass 2-3: SpellForge sniff DB — find spells with the same name as the talent
+            // Pass 2-3: SpellForge sniff DB ï¿½ find spells with the same name as the talent
             // that appear in cast or event data captured from packet sniffs.
             if (Database.SpellForgeSniffsDb.CanConnect())
             {
