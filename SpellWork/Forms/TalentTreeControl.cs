@@ -27,6 +27,10 @@ namespace SpellWork.Forms
         public bool IsGate { get; init; }
         public List<int> ChildIds { get; init; } = new();
 
+        // Icon names (filenames including extension, e.g. "spell_arcane_arcane01.jpg")
+        public string IconName    { get; init; } = string.Empty;
+        public string AltIconName { get; init; } = string.Empty;
+
         // Choice-node support -----------------------------------------------
         public int    AltSpellId { get; init; }
         public string AltName    { get; init; } = string.Empty;
@@ -113,7 +117,8 @@ namespace SpellWork.Forms
             ]),
             new("Demon Hunter", [
                 new("Havoc",      ["Aldrachi Reaver", "Fel-Scarred"]),
-                new("Vengeance",  ["Aldrachi Reaver", "Fel-Scarred"]),
+                new("Vengeance",  ["Aldrachi Reaver", "Annihilator"]),
+                new("Devourer",   ["Annihilator",     "Void-Scarred"]),
             ]),
             new("Druid", [
                 new("Balance",     ["Elune's Chosen",    "Keeper of the Grove"]),

@@ -241,214 +241,400 @@ namespace SpellWork.Forms
             RefreshSniffIds();
         }
 
-        private void ExtractEnumsClick(object sender, EventArgs e)
+        // ------------------------------------------------------------------ //
+        // Tools > Sync all talent trees from Wowhead…
+        // ------------------------------------------------------------------ //
+        private async void TsmSyncAllTreesClick(object sender, EventArgs e)
         {
-            using var fbd = new FolderBrowserDialog
-            {
-                Description      = "Select the folder to search for wsp_*.h files (all subfolders will be scanned)",
-                UseDescriptionForTitle = true,
-                ShowNewFolderButton    = false,
-            };
-
-            if (fbd.ShowDialog(this) != DialogResult.OK)
-                return;
-
-            var selectedDir = fbd.SelectedPath;
-
-            // Search recursively for all wsp_*.h files under the selected folder
-            var headerFiles = Directory.GetFiles(selectedDir, "wsp_*.h", SearchOption.AllDirectories);
-            if (headerFiles.Length == 0)
+            if (!Database.SpellForgeTrackerDb.CanConnect())
             {
                 MessageBox.Show(
-                    "No wsp_*.h files found in the selected folder or any of its subfolders.\n\n" +
-                    $"Searched: {selectedDir}\n\n" +
-                    "Please select the folder that contains (or has subfolders containing) the wsp_*.h files.",
-                    "No Files Found",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                    "Cannot reach the spellforge_tracker database.\n" +
+                    "Configure the connection under File → Settings.",
+                    "Sync Talent Trees",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            // Regex: matches   SOME_CONSTANT = 12345,   (optional trailing comment)
-            var entryRegex = new System.Text.RegularExpressions.Regex(
-                @"^\s*([A-Z0-9_]+)\s*=\s*(\d+)",
-                System.Text.RegularExpressions.RegexOptions.Compiled);
+            // Build all combinations, detect which already have data in the DB,
+            // and let the user pick exactly which ones to reimport.
+            var allCombinations = Database.WowheadSyncService.BuildCombinations();
+            var existing = allCombinations
+                .Where(c => Database.SpellForgeTrackerDb.HasData(c.cls, c.spec, c.hero))
+                .ToHashSet();
 
-            // Regex: matches   enum SomeName
-            var enumRegex  = new System.Text.RegularExpressions.Regex(
-                @"^\s*enum\s+(\w+)",
-                System.Text.RegularExpressions.RegexOptions.Compiled);
+            HashSet<(string cls, string spec, string hero)>? reimportSet = null;
 
-            int totalFilesWritten = 0;
-            int totalSpells       = 0;
-            int totalNotFound     = 0;
-
-            foreach (var headerPath in headerFiles)
+            if (existing.Count > 0)
             {
-                var baseName   = Path.GetFileNameWithoutExtension(headerPath);
-                var outputRoot = Path.Combine(AppContext.BaseDirectory, "WSP DATA", baseName);
-                Directory.CreateDirectory(outputRoot);
+                int existingCount = existing.Count;
+                int newCount      = allCombinations.Count - existingCount;
 
-                var lines = File.ReadAllLines(headerPath);
+                // ── Mode selection dialog ──────────────────────────────────────────────
+                //  Lets the user choose between three clearly labelled import modes:
+                //    1. Import new only   — skip all already-imported specs
+                //    2. Reimport all      — delete + re-fetch every spec
+                //    3. Choose which      — fine-grained checklist
+                // ──────────────────────────────────────────────────────────────────────
+                const int DLG_W = 520;
 
-                string?  currentEnumName = null;
-                var      currentEntries  = new List<(string ConstName, int SpellId)>();
-                int      filesWritten    = 0;
-                int      spellsFound     = 0;
-                int      notFound        = 0;
-                var      allFileSpells   = new List<(string ConstName, int SpellId, SpellInfo Info)>();
-
-                void FlushEnum()
+                using var dlgMode = new Form
                 {
-                    if (currentEnumName == null || currentEntries.Count == 0)
-                        return;
+                    Text            = "Sync Talent Trees",
+                    Width           = DLG_W,
+                    Height          = 230,
+                    FormBorderStyle = FormBorderStyle.FixedDialog,
+                    StartPosition   = FormStartPosition.CenterParent,
+                    MaximizeBox     = false,
+                    MinimizeBox     = false,
+                };
 
-                    var tempRtb   = new RichTextBox();
-                    var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                    foreach (var (constName, spellId) in currentEntries)
-                    {
-                        if (!DBC.DBC.SpellInfoStore.TryGetValue(spellId, out var spellInfo))
-                        {
-                            notFound++;
-                            continue;
-                        }
+                var lblSummary = new Label
+                {
+                    Text      = $"{existingCount} spec(s) already imported  ·  {newCount} new spec(s) not yet imported.",
+                    Location  = new System.Drawing.Point(16, 16),
+                    AutoSize  = false,
+                    Width     = DLG_W - 32,
+                    Height    = 20,
+                };
+                var lblQuestion = new Label
+                {
+                    Text      = "What would you like to do?",
+                    Location  = new System.Drawing.Point(16, 40),
+                    AutoSize  = true,
+                    Font      = new System.Drawing.Font(
+                        System.Drawing.SystemFonts.DefaultFont.FontFamily,
+                        System.Drawing.SystemFonts.DefaultFont.Size,
+                        System.Drawing.FontStyle.Bold),
+                };
 
-                        var sb = new StringBuilder();
-                        sb.AppendLine($"// Extracted from {baseName}.h ? enum {currentEnumName}");
-                        sb.AppendLine($"// {constName} = {spellId}");
-                        sb.AppendLine($"// Generated by SpellWork on {timestamp}");
-                        sb.AppendLine();
+                // Three radio buttons
+                var rdoNewOnly = new RadioButton
+                {
+                    Text     = "Import new specs only  (skip already-imported ones)",
+                    Location = new System.Drawing.Point(24, 68),
+                    Width    = DLG_W - 40,
+                    Height   = 20,
+                    Checked  = true,
+                };
+                var rdoAll = new RadioButton
+                {
+                    Text     = "Reimport everything  (delete existing data and re-fetch all specs)",
+                    Location = new System.Drawing.Point(24, 94),
+                    Width    = DLG_W - 40,
+                    Height   = 20,
+                };
+                var rdoChoose = new RadioButton
+                {
+                    Text     = "Choose which specs to reimport…",
+                    Location = new System.Drawing.Point(24, 120),
+                    Width    = DLG_W - 40,
+                    Height   = 20,
+                };
 
-                        tempRtb.Clear();
-                        spellInfo.Write(tempRtb);
-                        sb.Append(tempRtb.Text);
+                var btnStart = new Button
+                {
+                    Text     = "Start Sync",
+                    Width    = 100,
+                    Height   = 30,
+                    Location = new System.Drawing.Point(DLG_W - 232, 155),
+                    DialogResult = DialogResult.OK,
+                };
+                var btnModeCancel = new Button
+                {
+                    Text     = "Cancel",
+                    Width    = 80,
+                    Height   = 30,
+                    Location = new System.Drawing.Point(DLG_W - 122, 155),
+                    DialogResult = DialogResult.Cancel,
+                };
 
-                        var outFile = Path.Combine(outputRoot, $"{constName}.txt");
-                        File.WriteAllText(outFile, sb.ToString(), Encoding.UTF8);
-                        filesWritten++;
-                        spellsFound++;
-                        allFileSpells.Add((constName, spellId, spellInfo));
-                    }
-                    tempRtb.Dispose();
+                dlgMode.Controls.AddRange([lblSummary, lblQuestion,
+                    rdoNewOnly, rdoAll, rdoChoose,
+                    btnStart, btnModeCancel]);
+                dlgMode.AcceptButton = btnStart;
+                dlgMode.CancelButton = btnModeCancel;
 
-                    currentEntries.Clear();
-                    currentEnumName = null;
+                var modeResult = dlgMode.ShowDialog(this);
+                if (modeResult != DialogResult.OK) return;
+
+                if (rdoAll.Checked)
+                {
+                    // Reimport every already-imported spec.
+                    reimportSet = existing.ToHashSet();
                 }
-
-                foreach (var line in lines)
+                else if (rdoChoose.Checked)
                 {
-                    var em = enumRegex.Match(line);
-                    if (em.Success)
-                    {
-                        FlushEnum();
-                        var name = em.Groups[1].Value;
-                        currentEnumName = name.Contains("NPC", StringComparison.OrdinalIgnoreCase)
-                            ? null : name;
-                        continue;
-                    }
-
-                    if (line.TrimStart().StartsWith("}"))
-                    {
-                        FlushEnum();
-                        continue;
-                    }
-
-                    if (currentEnumName == null)
-                        continue;
-
-                    var em2 = entryRegex.Match(line);
-                    if (em2.Success && int.TryParse(em2.Groups[2].Value, out var id))
-                        currentEntries.Add((em2.Groups[1].Value, id));
-                }
-
-                FlushEnum();
-
-                // -- SPELL_PROC_<BASENAME>.txt ---------------------------------------------
-                // Determine which SpellFamilyName(s) this header belongs to by looking at
-                // the resolved spells, then dump ALL spells for those families from the full
-                // DBC ? grouped by SpellClassMask ? so it covers every flag combination,
-                // not just the subset referenced in the header file.
-                if (allFileSpells.Count > 0)
-                {
-                    // Collect the dominant family names from the header's resolved spells,
-                    // excluding SPELLFAMILY_GENERIC (0) which is not useful for proc masks.
-                    var relevantFamilies = allFileSpells
-                        .Select(e => e.Info.SpellFamilyName)
-                        .Where(f => f != 0)
-                        .Distinct()
-                        .OrderBy(f => f)
+                    // ── Fine-grained checklist ─────────────────────────────────────────
+                    var ordered = existing
+                        .OrderBy(c => c.cls).ThenBy(c => c.spec).ThenBy(c => c.hero)
+                        .Concat(allCombinations
+                            .Where(c => !existing.Contains(c))
+                            .OrderBy(c => c.cls).ThenBy(c => c.spec).ThenBy(c => c.hero))
                         .ToList();
 
-                    if (relevantFamilies.Count > 0)
+                    using var dlgPick = new Form
                     {
-                        var procSb    = new StringBuilder();
-                        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                        Text            = "Choose Specs to Reimport",
+                        Width           = DLG_W,
+                        Height          = 560,
+                        FormBorderStyle = FormBorderStyle.Sizable,
+                        StartPosition   = FormStartPosition.CenterParent,
+                        MaximizeBox     = false,
+                        MinimizeBox     = false,
+                    };
 
-                        procSb.AppendLine($"// SPELL_PROC_{baseName.ToUpperInvariant()}");
-                        procSb.AppendLine($"// Generated by SpellWork on {timestamp}");
-                        procSb.AppendLine($"// Source: {Path.GetFileName(headerPath)}");
-                        procSb.AppendLine($"// Full DBC SpellFamilyFlags dump for families detected in this header.");
+                    var lblPickInfo = new Label
+                    {
+                        Text     = $"Check the already-imported specs you want to DELETE and re-fetch.\n" +
+                                   $"New specs (shown in grey) are always imported regardless.",
+                        Location = new System.Drawing.Point(12, 10),
+                        AutoSize = true,
+                    };
 
-                        foreach (var family in relevantFamilies)
+                    var clb = new CheckedListBox
+                    {
+                        Location     = new System.Drawing.Point(12, 54),
+                        Size         = new System.Drawing.Size(DLG_W - 32, 390),
+                        CheckOnClick = true,
+                        BorderStyle  = BorderStyle.FixedSingle,
+                    };
+
+                    foreach (var c in ordered.Take(existingCount))
+                        clb.Items.Add($"{c.cls}  /  {c.spec}  /  {c.hero}", false);
+                    foreach (var c in ordered.Skip(existingCount))
+                        clb.Items.Add($"{c.cls}  /  {c.spec}  /  {c.hero}   (new)", false);
+
+                    clb.DrawMode = DrawMode.OwnerDrawFixed;
+                    clb.DrawItem += (s, de) =>
+                    {
+                        de.DrawBackground();
+                        bool isNew = de.Index >= existingCount;
+                        var fg = isNew
+                            ? System.Drawing.SystemColors.GrayText
+                            : System.Drawing.SystemColors.WindowText;
+                        if ((de.State & DrawItemState.Selected) != 0 && !isNew)
                         {
-                            var familyName = Enum.IsDefined(typeof(SpellFamilyNames), (int)family)
-                                ? ((SpellFamilyNames)family).ToString()
-                                : "SPELLFAMILY_UNKNOWN";
-
-                            // Pull every spell in this family that has at least one non-zero
-                            // SpellClassMask word ? these are the only ones relevant to spell_proc.
-                            var familySpells = DBC.DBC.SpellInfoStore.Values
-                                .Where(s => s.SpellFamilyName == family &&
-                                            s.SpellClassMask.Any(m => m != 0))
-                                .OrderBy(s => s.ID)
-                                .ToList();
-
-                            procSb.AppendLine();
-                            procSb.AppendLine($"// ============================================================");
-                            procSb.AppendLine($"// SpellFamilyName: {familyName} ({family})");
-                            procSb.AppendLine($"// Total spells with family flags: {familySpells.Count}");
-                            procSb.AppendLine($"// ============================================================");
-
-                            // Group by the exact 4-word mask key so every unique flag
-                            // combination gets its own labelled block.
-                            var byMask = familySpells
-                                .GroupBy(s =>
-                                {
-                                    var m = s.SpellClassMask;
-                                    return $"{m[0]:X8}{m[1]:X8}{m[2]:X8}{m[3]:X8}";
-                                })
-                                .OrderBy(g => g.Key);
-
-                            foreach (var maskGroup in byMask)
-                            {
-                                var mask = maskGroup.First().SpellClassMask;
-                                procSb.AppendLine();
-                                procSb.AppendLine($"// [0x{mask[0]:X8} 0x{mask[1]:X8} 0x{mask[2]:X8} 0x{mask[3]:X8}]");
-                                foreach (var s in maskGroup)
-                                    procSb.AppendLine($"//   ({s.ID,-8}) {s.Name}");
-                            }
+                            using var br = new System.Drawing.SolidBrush(
+                                System.Drawing.SystemColors.Highlight);
+                            de.Graphics.FillRectangle(br, de.Bounds);
+                            fg = System.Drawing.SystemColors.HighlightText;
                         }
+                        if (de.Index >= 0)
+                        {
+                            var text = clb.Items[de.Index].ToString() ?? string.Empty;
+                            var rect = new System.Drawing.Rectangle(
+                                de.Bounds.X + 16, de.Bounds.Y,
+                                de.Bounds.Width - 16, de.Bounds.Height);
+                            TextRenderer.DrawText(de.Graphics, text, clb.Font, rect, fg,
+                                TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+                        }
+                        de.DrawFocusRectangle();
+                    };
+                    clb.ItemCheck += (s, ie) =>
+                    {
+                        if (ie.Index >= existingCount)
+                            ie.NewValue = ie.CurrentValue;
+                    };
 
-                        var procFile = Path.Combine(outputRoot, $"SPELL_PROC_{baseName.ToUpperInvariant()}.txt");
-                        File.WriteAllText(procFile, procSb.ToString(), Encoding.UTF8);
-                    }
+                    var pnlPickBtns = new FlowLayoutPanel
+                    {
+                        Location      = new System.Drawing.Point(12, 454),
+                        Size          = new System.Drawing.Size(DLG_W - 24, 36),
+                        FlowDirection = FlowDirection.LeftToRight,
+                        WrapContents  = false,
+                    };
+
+                    var btnSelAll = new Button
+                    {
+                        Text   = "Select All",
+                        Width  = 90,
+                        Height = 28,
+                    };
+                    btnSelAll.Click += (_, _) =>
+                    {
+                        for (int i = 0; i < existingCount; i++)
+                            clb.SetItemChecked(i, true);
+                    };
+
+                    var btnDeselAll = new Button
+                    {
+                        Text   = "Deselect All",
+                        Width  = 90,
+                        Height = 28,
+                    };
+                    btnDeselAll.Click += (_, _) =>
+                    {
+                        for (int i = 0; i < existingCount; i++)
+                            clb.SetItemChecked(i, false);
+                    };
+
+                    var spacer = new Label { Width = 120, Height = 28 };
+
+                    var btnPickStart = new Button
+                    {
+                        Text         = "Start Sync",
+                        Width        = 100,
+                        Height       = 28,
+                        DialogResult = DialogResult.OK,
+                    };
+                    var btnPickCancel = new Button
+                    {
+                        Text         = "Cancel",
+                        Width        = 80,
+                        Height       = 28,
+                        DialogResult = DialogResult.Cancel,
+                    };
+
+                    pnlPickBtns.Controls.AddRange([btnSelAll, btnDeselAll, spacer, btnPickStart, btnPickCancel]);
+                    dlgPick.Controls.AddRange([lblPickInfo, clb, pnlPickBtns]);
+                    dlgPick.AcceptButton = btnPickStart;
+                    dlgPick.CancelButton = btnPickCancel;
+
+                    if (dlgPick.ShowDialog(this) != DialogResult.OK) return;
+
+                    reimportSet = new HashSet<(string, string, string)>();
+                    for (int i = 0; i < existingCount; i++)
+                        if (clb.GetItemChecked(i))
+                        {
+                            var c = ordered[i];
+                            reimportSet.Add((c.cls, c.spec, c.hero));
+                        }
                 }
-
-                totalFilesWritten += filesWritten;
-                totalSpells       += spellsFound;
-                totalNotFound     += notFound;
+                // rdoNewOnly.Checked → reimportSet stays null → all existing skipped
             }
 
-            MessageBox.Show(
-                $"Done.\n\n" +
-                $"Headers processed : {headerFiles.Length}\n" +
-                $"Files written      : {totalFilesWritten}\n" +
-                $"Spells found       : {totalSpells}\n" +
-                $"Not in DBC         : {totalNotFound}\n\n" +
-                $"Output folder:\n{Path.Combine(AppContext.BaseDirectory, "WSP DATA")}",
-                "Extract Enums",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            // Build the progress dialog
+            using var dlg = new Form
+            {
+                Text            = "Syncing talent trees from Wowhead…",
+                Width           = 560,
+                Height          = 230,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition   = FormStartPosition.CenterParent,
+                MaximizeBox     = false,
+                MinimizeBox     = false,
+                ControlBox      = false,
+            };
+
+            var lblStatus = new Label
+            {
+                Text      = "Initialising Playwright…",
+                Dock      = DockStyle.None,
+                AutoSize  = false,
+                Width     = 520,
+                Height    = 20,
+                Location  = new System.Drawing.Point(12, 12),
+            };
+            var pb = new ProgressBar
+            {
+                Minimum  = 0,
+                Maximum  = 100,
+                Value    = 0,
+                Width    = 520,
+                Height   = 22,
+                Location = new System.Drawing.Point(12, 44),
+                Style    = ProgressBarStyle.Continuous,
+            };
+            var rtbLog = new System.Windows.Forms.RichTextBox
+            {
+                ReadOnly    = true,
+                Width       = 520,
+                Height      = 100,
+                Location    = new System.Drawing.Point(12, 78),
+                BackColor   = System.Drawing.Color.FromArgb(20, 20, 26),
+                ForeColor   = System.Drawing.Color.FromArgb(200, 200, 210),
+                Font        = new System.Drawing.Font("Consolas", 8f),
+                ScrollBars  = RichTextBoxScrollBars.Vertical,
+            };
+            var btnCancel = new Button
+            {
+                Text     = "Cancel",
+                Width    = 80,
+                Location = new System.Drawing.Point(452, 185),
+                DialogResult = DialogResult.Cancel,
+            };
+            dlg.Controls.AddRange([lblStatus, pb, rtbLog, btnCancel]);
+            dlg.CancelButton = btnCancel;
+
+            using var cts = new System.Threading.CancellationTokenSource();
+            btnCancel.Click += (_, _) => cts.Cancel();
+
+            var errors = new System.Text.StringBuilder();
+
+            var progress = new Progress<Database.WowheadSyncProgress>(p =>
+            {
+                if (dlg.IsDisposed) return;
+
+                string pct = p.Total > 0
+                    ? $"[{p.Done}/{p.Total}]"
+                    : string.Empty;
+
+                if (p.Done >= p.Total && p.Total > 0)
+                {
+                    lblStatus.Text  = $"Done — {p.NodesSynced:N0} nodes, {p.SpellsSynced:N0} spells synced.";
+                    pb.Value        = 100;
+                    btnCancel.Text  = "Close";
+                    btnCancel.DialogResult = DialogResult.OK;
+                    return;
+                }
+
+                pb.Value       = p.Total > 0 ? (int)((double)p.Done / p.Total * 100) : 0;
+                lblStatus.Text = $"{pct} {p.Current}";
+
+                if (p.IsError)
+                {
+                    rtbLog.SelectionColor = System.Drawing.Color.FromArgb(255, 100, 100);
+                    rtbLog.AppendText($"✗ {p.Current}: {p.ErrorDetail}\n");
+                    rtbLog.ScrollToCaret();
+                    errors.AppendLine($"{p.Current}: {p.ErrorDetail}");
+                }
+                else
+                {
+                    rtbLog.SelectionColor = System.Drawing.Color.FromArgb(130, 210, 130);
+                    rtbLog.AppendText($"✓ {p.Current}\n");
+                    rtbLog.ScrollToCaret();
+                }
+            });
+
+            dlg.Show(this);
+            Application.DoEvents();
+
+            try
+            {
+                _tsmSyncAllTrees.Enabled = false;
+
+                await Task.Run(
+                    () => Database.WowheadSyncService.SyncAllAsync(progress, cts.Token, reimportSet),
+                    cts.Token);
+                // dlg is already visible (Show); do not call ShowDialog — it would crash.
+                // The progress callback already changed btnCancel to "Close" when done.
+            }
+            catch (OperationCanceledException)
+            {
+                if (!dlg.IsDisposed)
+                {
+                    lblStatus.Text = "Cancelled.";
+                    btnCancel.Text  = "Close";
+                    btnCancel.DialogResult = DialogResult.Cancel;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Sync failed:\n{ex.Message}\n\n" +
+                    "If this is a Playwright error, make sure you have run:\n" +
+                    @"  pwsh bin\Debug\net8.0-windows\playwright.ps1 install chromium",
+                    "Sync Talent Trees",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _tsmSyncAllTrees.Enabled = true;
+                // Reload current tree from the freshly synced data
+                if (!string.IsNullOrEmpty(_currentClassName))
+                    OnClassSpecHeroSelected(_currentClassName, _currentSpecName, _currentHeroName);
+            }
         }
 
         private void TabControl1SelectedIndexChanged(object sender, EventArgs e)

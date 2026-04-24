@@ -205,6 +205,161 @@ namespace SpellWork.Database
             IEnumerable<(int SpellId, string SpellName, string ClassName,
                          string SpecName, string HeroName, string TreeType)> spells)
         {
+            try
+            {
+                using var c = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
+                c.Open();
+                foreach (var s in spells)
+                {
+                    if (s.SpellId <= 0) continue;
+                    // INSERT IGNORE so existing status/notes written by the user are never overwritten.
+                    using var cmd = new MySqlCommand(
+                        "INSERT IGNORE INTO talent_spells " +
+                        "(spell_id, spell_name, class_name, spec_name, hero_name, tree_type, status) " +
+                        "VALUES (@sid, @sname, @cls, @spec, @hero, @tt, 'nyi')", c);
+                    cmd.Parameters.AddWithValue("@sid",   s.SpellId);
+                    cmd.Parameters.AddWithValue("@sname", s.SpellName);
+                    cmd.Parameters.AddWithValue("@cls",   s.ClassName);
+                    cmd.Parameters.AddWithValue("@spec",  s.SpecName);
+                    cmd.Parameters.AddWithValue("@hero",  s.HeroName);
+                    cmd.Parameters.AddWithValue("@tt",    s.TreeType);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"[SpellForgeTrackerDb] UpsertSpells failed: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Upserts all nodes from the three talent trees (class, hero, spec) into
+        /// <c>talent_tree_nodes</c>.  Class and spec tree nodes are stored with
+        /// <c>hero_name=''</c> so they are shared across hero selections; hero tree
+        /// nodes use the explicit hero name.  Existing rows are updated in-place;
+        /// user-managed columns (<c>icon_name</c>, <c>alt_spell_id</c>,
+        /// <c>alt_icon_name</c>) are preserved.
+        /// </summary>
+        public static void UpsertNodes(
+            IReadOnlyList<TalentTree> trees,
+            string cls, string spec, string hero)
+        {
+            if (trees == null || trees.Count == 0) return;
+            // s_treeTypes: [0]="class"  [1]="hero"  [2]="spec"
+            // hero_name for each tree:  [0]=""  [1]=heroName  [2]=""
+            string[] heroNames = ["", hero, ""];
+
+            try
+            {
+                using var c = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
+                c.Open();
+
+                for (int i = 0; i < Math.Min(trees.Count, 3); i++)
+                {
+                    string treeType = s_treeTypes[i];
+                    string heroName = heroNames[i];
+
+                    foreach (var node in trees[i].Nodes)
+                        {
+                            using var cmd = new MySqlCommand(
+                                "INSERT INTO talent_tree_nodes " +
+                                "(class_name, spec_name, hero_name, tree_type, cell_id, " +
+                                " row_pos, col_pos, max_rank, is_gate, spell_id, node_name, " +
+                                " icon_name, alt_spell_id, alt_icon_name) " +
+                                "VALUES (@cls, @spec, @hero, @tt, @cell, " +
+                                "        @row, @col, @rank, @gate, @sid, @name, @icon, @asid, @aicon) " +
+                                "ON DUPLICATE KEY UPDATE " +
+                                "  row_pos=VALUES(row_pos), col_pos=VALUES(col_pos), " +
+                                "  max_rank=VALUES(max_rank), " +
+                                "  spell_id=VALUES(spell_id), node_name=VALUES(node_name), " +
+                                "  icon_name=IF(VALUES(icon_name)!='', VALUES(icon_name), icon_name), " +
+                                "  alt_spell_id=IF(VALUES(alt_spell_id)!=0, VALUES(alt_spell_id), alt_spell_id), " +
+                                "  alt_icon_name=IF(VALUES(alt_icon_name)!='', VALUES(alt_icon_name), alt_icon_name)", c);
+                            cmd.Parameters.AddWithValue("@cls",   cls);
+                            cmd.Parameters.AddWithValue("@spec",  spec);
+                            cmd.Parameters.AddWithValue("@hero",  heroName);
+                            cmd.Parameters.AddWithValue("@tt",    treeType);
+                            cmd.Parameters.AddWithValue("@cell",  node.Id);
+                            cmd.Parameters.AddWithValue("@row",   node.Row);
+                            cmd.Parameters.AddWithValue("@col",   (int)node.Col);
+                            cmd.Parameters.AddWithValue("@rank",  node.MaxRank);
+                            cmd.Parameters.AddWithValue("@gate",  node.IsGate ? 1 : 0);
+                            cmd.Parameters.AddWithValue("@sid",   node.SpellId);
+                            cmd.Parameters.AddWithValue("@name",  node.Name);
+                            cmd.Parameters.AddWithValue("@icon",  node.IconName);
+                            cmd.Parameters.AddWithValue("@asid",  node.AltSpellId);
+                            cmd.Parameters.AddWithValue("@aicon", node.AltIconName);
+                            cmd.ExecuteNonQuery();
+                        }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"[SpellForgeTrackerDb] UpsertNodes failed: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Replaces all connections for this class/spec/hero with the parsed set.
+        /// Class and spec connections use <c>hero_name=''</c>; hero connections use the
+        /// explicit hero name.
+        /// </summary>
+        public static void UpsertConnections(
+            IReadOnlyList<TalentTree> trees,
+            string cls, string spec, string hero)
+        {
+            if (trees == null || trees.Count == 0) return;
+            string[] heroNames = ["", hero, ""];
+
+            try
+            {
+                using var c = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
+                c.Open();
+
+                // Delete and re-insert is safe because connections are derived
+                // entirely from the parsed page — there are no user-editable fields.
+                using (var del = new MySqlCommand(
+                    "DELETE FROM talent_tree_connections " +
+                    "WHERE class_name=@cls AND spec_name=@spec " +
+                    "AND (hero_name=@hero OR hero_name='')", c))
+                {
+                    del.Parameters.AddWithValue("@cls",  cls);
+                    del.Parameters.AddWithValue("@spec", spec);
+                    del.Parameters.AddWithValue("@hero", hero);
+                    del.ExecuteNonQuery();
+                }
+
+                for (int i = 0; i < Math.Min(trees.Count, 3); i++)
+                {
+                    string treeType = s_treeTypes[i];
+                    string heroName = heroNames[i];
+
+                    foreach (var node in trees[i].Nodes)
+                    {
+                        foreach (var childId in node.ChildIds)
+                        {
+                            using var cmd = new MySqlCommand(
+                                "INSERT IGNORE INTO talent_tree_connections " +
+                                "(class_name, spec_name, hero_name, tree_type, from_cell, to_cell) " +
+                                "VALUES (@cls, @spec, @hero, @tt, @from, @to)", c);
+                            cmd.Parameters.AddWithValue("@cls",  cls);
+                            cmd.Parameters.AddWithValue("@spec", spec);
+                            cmd.Parameters.AddWithValue("@hero", heroName);
+                            cmd.Parameters.AddWithValue("@tt",   treeType);
+                            cmd.Parameters.AddWithValue("@from", node.Id);
+                            cmd.Parameters.AddWithValue("@to",   childId);
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"[SpellForgeTrackerDb] UpsertConnections failed: {ex.Message}");
+                throw;
+            }
         }
 
         public static SyncResult DiffAndApply(
@@ -382,16 +537,76 @@ namespace SpellWork.Database
             {
                 using var c = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
                 c.Open();
-                using var cmd = new MySqlCommand(
-                    "SELECT COUNT(*) FROM `talent_tree_nodes` " +
-                    "WHERE `class_name`=@c AND `spec_name`=@s " +
-                    "AND (`hero_name`=@h OR `hero_name`='')", c);
+                // When a specific hero name is given, check only the hero-tree rows for
+                // that hero.  Using "OR hero_name=''" would incorrectly match the shared
+                // class/spec rows written by a *different* hero's import and cause the
+                // second hero option for each spec to always be skipped.
+                string sql = string.IsNullOrEmpty(hero)
+                    ? "SELECT COUNT(*) FROM `talent_tree_nodes` " +
+                      "WHERE `class_name`=@c AND `spec_name`=@s AND `hero_name`=''"
+                    : "SELECT COUNT(*) FROM `talent_tree_nodes` " +
+                      "WHERE `class_name`=@c AND `spec_name`=@s " +
+                      "AND `hero_name`=@h AND `tree_type`='hero'";
+                using var cmd = new MySqlCommand(sql, c);
                 cmd.Parameters.AddWithValue("@c", cls);
                 cmd.Parameters.AddWithValue("@s", spec);
                 cmd.Parameters.AddWithValue("@h", hero);
                 return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
             }
             catch { return false; }
+        }
+
+        /// <summary>Returns true if any talent tree nodes exist in the database at all.</summary>
+        public static bool HasAnyData()
+        {
+            try
+            {
+                using var c = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
+                c.Open();
+                using var cmd = new MySqlCommand(
+                    "SELECT 1 FROM `talent_tree_nodes` LIMIT 1", c);
+                using var r = cmd.ExecuteReader();
+                return r.Read();
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// Deletes all nodes and connections for the given class/spec/hero combination.
+        /// Talent spells are intentionally preserved (they carry user-edited status/notes).
+        /// </summary>
+        public static void DeleteData(string cls, string spec, string hero)
+        {
+            try
+            {
+                using var c = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
+                c.Open();
+                using (var cmd = new MySqlCommand(
+                    "DELETE FROM `talent_tree_connections` " +
+                    "WHERE `class_name`=@c AND `spec_name`=@s " +
+                    "AND (`hero_name`=@h OR `hero_name`='')", c))
+                {
+                    cmd.Parameters.AddWithValue("@c", cls);
+                    cmd.Parameters.AddWithValue("@s", spec);
+                    cmd.Parameters.AddWithValue("@h", hero);
+                    cmd.ExecuteNonQuery();
+                }
+                using (var cmd = new MySqlCommand(
+                    "DELETE FROM `talent_tree_nodes` " +
+                    "WHERE `class_name`=@c AND `spec_name`=@s " +
+                    "AND (`hero_name`=@h OR `hero_name`='')", c))
+                {
+                    cmd.Parameters.AddWithValue("@c", cls);
+                    cmd.Parameters.AddWithValue("@s", spec);
+                    cmd.Parameters.AddWithValue("@h", hero);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[SpellForgeTrackerDb] DeleteData failed: {ex.Message}");
+                throw;
+            }
         }
 
         /// <summary>

@@ -35,10 +35,10 @@
             menuStrip1 = new System.Windows.Forms.MenuStrip();
             _tsmFile = new System.Windows.Forms.ToolStripMenuItem();
             _tsmSettings = new System.Windows.Forms.ToolStripMenuItem();
-            _tsmExtractEnums = new System.Windows.Forms.ToolStripMenuItem();
             _tsmExit = new System.Windows.Forms.ToolStripMenuItem();
             _tsmTools = new System.Windows.Forms.ToolStripMenuItem();
             _tsmImportSniff = new System.Windows.Forms.ToolStripMenuItem();
+            _tsmSyncAllTrees = new System.Windows.Forms.ToolStripMenuItem();
             _ilPro = new System.Windows.Forms.ImageList(components);
             splitContainer7 = new System.Windows.Forms.SplitContainer();
             splitContainer8 = new System.Windows.Forms.SplitContainer();
@@ -284,7 +284,7 @@
             // 
             // _tsmFile
             // 
-            _tsmFile.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { _tsmSettings, _tsmExtractEnums, _tsmExit });
+            _tsmFile.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { _tsmSettings, _tsmExit });
             _tsmFile.Name = "_tsmFile";
             _tsmFile.Size = new System.Drawing.Size(37, 20);
             _tsmFile.Text = "File";
@@ -296,13 +296,6 @@
             _tsmSettings.Text = "Settings";
             _tsmSettings.Click += SettingsClick;
             // 
-            // _tsmExtractEnums
-            // 
-            _tsmExtractEnums.Name = "_tsmExtractEnums";
-            _tsmExtractEnums.Size = new System.Drawing.Size(116, 22);
-            _tsmExtractEnums.Text = "Extract Enums";
-            _tsmExtractEnums.Click += ExtractEnumsClick;
-            // 
             // _tsmExit
             // 
             _tsmExit.Name = "_tsmExit";
@@ -311,7 +304,7 @@
             // 
             // _tsmTools
             // 
-            _tsmTools.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { _tsmImportSniff });
+            _tsmTools.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { _tsmImportSniff, _tsmSyncAllTrees });
             _tsmTools.Name = "_tsmTools";
             _tsmTools.Size = new System.Drawing.Size(46, 20);
             _tsmTools.Text = "Tools";
@@ -319,9 +312,16 @@
             // _tsmImportSniff
             // 
             _tsmImportSniff.Name = "_tsmImportSniff";
-            _tsmImportSniff.Size = new System.Drawing.Size(160, 22);
+            _tsmImportSniff.Size = new System.Drawing.Size(260, 22);
             _tsmImportSniff.Text = "Import sniff...";
             _tsmImportSniff.Click += TsmImportSniffClick;
+            // 
+            // _tsmSyncAllTrees
+            // 
+            _tsmSyncAllTrees.Name = "_tsmSyncAllTrees";
+            _tsmSyncAllTrees.Size = new System.Drawing.Size(260, 22);
+            _tsmSyncAllTrees.Text = "Sync all talent trees from Wowhead\u2026";
+            _tsmSyncAllTrees.Click += TsmSyncAllTreesClick;
             _tsmExit.Click += ExitClick;
             // 
             // _ilPro
@@ -2351,7 +2351,6 @@
         private System.Windows.Forms.Button _bWrite;
         private System.Windows.Forms.ToolStripMenuItem _tsmFile;
         private System.Windows.Forms.ToolStripMenuItem _tsmSettings;
-        private System.Windows.Forms.ToolStripMenuItem _tsmExtractEnums;
         private System.Windows.Forms.ToolStripMenuItem _tsmExit;
         private System.Windows.Forms.Button _bLevelScaling;
         private System.Windows.Forms.RichTextBox _rtbProcSpellInfo;
@@ -2374,5 +2373,6 @@
         private System.Windows.Forms.TabPage _tpSpellForgeTracker;
         private System.Windows.Forms.ToolStripMenuItem _tsmTools;
         private System.Windows.Forms.ToolStripMenuItem _tsmImportSniff;
+        private System.Windows.Forms.ToolStripMenuItem _tsmSyncAllTrees;
     }
 }
