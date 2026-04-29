@@ -40,8 +40,8 @@ namespace SpellWork.Database
             bool anyData = false;
             foreach (int id in ids)
             {
-                if (!TryGetSummary(id, out var chk)) continue;
-                if (chk != null) { anyData = true; break; }
+                if (TryGetSummary(id, out var chk) && chk != null) { anyData = true; break; }
+                if (SpellForgeSniffsDb.GetSpellPrepareEntry(id) != null) { anyData = true; break; }
             }
             if (!anyData) return null;
 
@@ -81,77 +81,125 @@ namespace SpellWork.Database
                                       $"  removed {sum.AuraRemovedCount:N0}");
 
                     sb.AppendLine($"  Build       : {sum.LastSeenBuild}");
+
+                    // ── Cast sample (trigger chain analysis) ─────────────────
+                    var casts = SpellForgeSniffsDb.GetCastsForSpell(spellId, 20);
+                    if (casts.Count > 0)
+                    {
+                        bool anyTriggered = casts.Any(c => c.IsTriggered);
+                        if (anyTriggered)
+                        {
+                            var trigFreq = casts
+                                .Where(c => c.TriggeredBySpellId.HasValue)
+                                .GroupBy(c => c.TriggeredBySpellId!.Value)
+                                .OrderByDescending(g => g.Count())
+                                .Take(5)
+                                .ToList();
+
+                            if (trigFreq.Count > 0)
+                            {
+                                sb.AppendLine("  Triggered by (top sources):");
+                                foreach (var g in trigFreq)
+                                {
+                                    var pName = DBC.DBC.SpellInfoStore.TryGetValue(g.Key, out var pSp)
+                                        ? pSp.NameAndSubname : $"ID {g.Key}";
+                                    sb.AppendLine($"    {g.Key}: {pName}  ×{g.Count()}");
+                                }
+                            }
+                        }
+
+                        int avgHit  = (int)casts.Average(c => c.HitCount);
+                        int avgMiss = (int)casts.Average(c => c.MissCount);
+                        sb.AppendLine($"  Cast sample : N={casts.Count}" +
+                                      $"  avgHits={avgHit}" +
+                                      $"  avgMisses={avgMiss}");
+                    }
+
+                    // ── Aura durations and stack depth ────────────────────────
+                    var auras = SpellForgeSniffsDb.GetAuraEventsForSpell(spellId, 20);
+                    if (auras.Count > 0)
+                    {
+                        var durSamples = auras
+                            .Where(a => a.DurationMs > 0)
+                            .Select(a => a.DurationMs)
+                            .ToList();
+
+                        if (durSamples.Count > 0)
+                        {
+                            int minDur = durSamples.Min();
+                            int maxDur = durSamples.Max();
+                            sb.AppendLine(minDur == maxDur
+                                ? $"  Aura dur    : {minDur} ms"
+                                : $"  Aura dur    : {minDur}–{maxDur} ms  (varies)");
+                        }
+
+                        int maxStacks = auras.Max(a => a.StackCount);
+                        if (maxStacks > 1)
+                            sb.AppendLine($"  Max stacks  : {maxStacks}");
+                    }
+
+                    // ── Crit rate and periodic flag from damage log ───────────
+                    var dmg = SpellForgeSniffsDb.GetDamageEventsForSpell(spellId, 100);
+                    if (dmg.Count > 0)
+                    {
+                        double critRate = dmg.Count(d => d.IsCritical) * 100.0 / dmg.Count;
+                        sb.AppendLine($"  Crit rate   : {critRate:F1}%  (N={dmg.Count})");
+                        if (dmg.Any(d => d.IsPeriodic))
+                            sb.AppendLine("  Periodic    : yes");
+                    }
                 }
                 else
                 {
                     sb.AppendLine("  (no summary data for this spell)");
-                    continue;
                 }
 
-                // ── Cast sample (trigger chain analysis) ─────────────────
-                var casts = SpellForgeSniffsDb.GetCastsForSpell(spellId, 20);
-                if (casts.Count > 0)
+                // ── SPELL_PREPARE observation (independent of summary data) ─────────
+                // A spell observed going through SMSG_SPELL_PREPARE is a talent override that
+                // uses the cast-ID-renaming mechanism.  The only fields that matter from the
+                // paired SMSG_SPELL_START are: SpellID, SpellXSpellVisualID, and CastFlags.
+                var prepareEntry = SpellForgeSniffsDb.GetSpellPrepareEntry(spellId);
+                if (prepareEntry != null)
                 {
-                    bool anyTriggered = casts.Any(c => c.IsTriggered);
-                    if (anyTriggered)
-                    {
-                        var trigFreq = casts
-                            .Where(c => c.TriggeredBySpellId.HasValue)
-                            .GroupBy(c => c.TriggeredBySpellId!.Value)
-                            .OrderByDescending(g => g.Count())
-                            .Take(5)
-                            .ToList();
+                    sb.AppendLine($"  SPELL_PREPARE : observed ×{prepareEntry.ObserveCount}");
 
-                        if (trigFreq.Count > 0)
-                        {
-                            sb.AppendLine("  Triggered by (top sources):");
-                            foreach (var g in trigFreq)
-                            {
-                                var pName = DBC.DBC.SpellInfoStore.TryGetValue(g.Key, out var pSp)
-                                    ? pSp.NameAndSubname : $"ID {g.Key}";
-                                sb.AppendLine($"    {g.Key}: {pName}  ×{g.Count()}");
-                            }
-                        }
+                    // Client spell: the SpellID the player cast (authoritative from SPELL_START).
+                    sb.AppendLine($"    Client spell : {prepareEntry.SpellId}");
+
+                    // Server cast hint: ServerCastID GUID Entry decoded by WPP — informational.
+                    // "It's just a GUID; you could skip the spell ID in it and nothing changes."
+                    // BUT: it hints at the underlying spell the server routes the cast through.
+                    if (prepareEntry.ServerCastSpell != 0 && prepareEntry.ServerCastSpell != prepareEntry.SpellId)
+                    {
+                        DBC.DBC.SpellInfoStore.TryGetValue(prepareEntry.ServerCastSpell, out var sSp);
+                        string sName = sSp?.NameAndSubname ?? $"ID {prepareEntry.ServerCastSpell}";
+                        sb.AppendLine($"    Server hint  : {prepareEntry.ServerCastSpell} ({sName})  [ServerCastID GUID Entry — informational]");
                     }
 
-                    int avgHit  = (int)casts.Average(c => c.HitCount);
-                    int avgMiss = (int)casts.Average(c => c.MissCount);
-                    sb.AppendLine($"  Cast sample : N={casts.Count}" +
-                                  $"  avgHits={avgHit}" +
-                                  $"  avgMisses={avgMiss}");
-                }
+                    if (prepareEntry.VisualId != 0)
+                        sb.AppendLine($"    Visual       : SpellXSpellVisualID {prepareEntry.VisualId}");
 
-                // ── Aura durations and stack depth ────────────────────────
-                var auras = SpellForgeSniffsDb.GetAuraEventsForSpell(spellId, 20);
-                if (auras.Count > 0)
-                {
-                    var durSamples = auras
-                        .Where(a => a.DurationMs > 0)
-                        .Select(a => a.DurationMs)
-                        .ToList();
+                    if (prepareEntry.CastFlags != 0)
+                        sb.AppendLine($"    CastFlags    : {prepareEntry.CastFlags} (0x{prepareEntry.CastFlags:X})");
 
-                    if (durSamples.Count > 0)
+                    // Implementation guidance for the AI agent.
+                    sb.AppendLine("    ── Implementation note ──────────────────────────────────────────────");
+                    if (prepareEntry.ServerCastSpell != 0 && prepareEntry.ServerCastSpell != prepareEntry.SpellId)
                     {
-                        int minDur = durSamples.Min();
-                        int maxDur = durSamples.Max();
-                        sb.AppendLine(minDur == maxDur
-                            ? $"  Aura dur    : {minDur} ms"
-                            : $"  Aura dur    : {minDur}–{maxDur} ms  (varies)");
+                        DBC.DBC.SpellInfoStore.TryGetValue(prepareEntry.ServerCastSpell, out var hSp);
+                        string hName = hSp?.NameAndSubname ?? $"ID {prepareEntry.ServerCastSpell}";
+                        sb.AppendLine($"    This cast was initiated client-side as spell {prepareEntry.SpellId}");
+                        sb.AppendLine($"    but the server uses {prepareEntry.ServerCastSpell} ({hName}) internally.");
+                        sb.AppendLine($"    Implement as a talent override/replacement of {prepareEntry.ServerCastSpell} ({hName}):");
                     }
-
-                    int maxStacks = auras.Max(a => a.StackCount);
-                    if (maxStacks > 1)
-                        sb.AppendLine($"  Max stacks  : {maxStacks}");
-                }
-
-                // ── Crit rate and periodic flag from damage log ───────────
-                var dmg = SpellForgeSniffsDb.GetDamageEventsForSpell(spellId, 100);
-                if (dmg.Count > 0)
-                {
-                    double critRate = dmg.Count(d => d.IsCritical) * 100.0 / dmg.Count;
-                    sb.AppendLine($"  Crit rate   : {critRate:F1}%  (N={dmg.Count})");
-                    if (dmg.Any(d => d.IsPeriodic))
-                        sb.AppendLine("  Periodic    : yes");
+                    else
+                    {
+                        sb.AppendLine($"    Implement as a talent override (SMSG_SPELL_PREPARE mechanism):");
+                    }
+                    if (prepareEntry.VisualId != 0)
+                        sb.AppendLine($"      • Set SpellXSpellVisualID = {prepareEntry.VisualId} on the cast.");
+                    if (prepareEntry.CastFlags != 0)
+                        sb.AppendLine($"      • Ensure CastFlags match: {prepareEntry.CastFlags} (0x{prepareEntry.CastFlags:X}).");
+                    sb.AppendLine("      • Do NOT treat this as a standalone new spell — it overrides an existing one.");
                 }
             }
 

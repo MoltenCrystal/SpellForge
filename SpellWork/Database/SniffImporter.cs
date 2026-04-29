@@ -20,6 +20,10 @@ namespace SpellWork.Database
     //   SMSG_SPELL_HEAL_LOG              -> sniff_heal_events
     //   SMSG_SPELL_ENERGIZE_LOG          -> sniff_energize_events
     //   SMSG_SPELL_PERIODIC_AURA_LOG     -> sniff_periodic_events
+    //   SMSG_SPELL_PREPARE + SMSG_SPELL_START  -> sniff_spell_substitutions
+    //     (SPELL_PREPARE records the ServerCastID GUID; SPELL_START carries the
+    //      actual SpellID.  GUID Entry fields are NOT used — they are opaque GUID
+    //      metadata and do not reliably encode spell IDs.)
     // ======================================================================
     public sealed class SniffImporter
     {
@@ -58,6 +62,16 @@ namespace SpellWork.Database
             var energizes  = new List<SniffEnergizeEvent>(BatchFlush);
             var periodics  = new List<SniffPeriodicEvent>(BatchFlush);
 
+            // Spell substitutions from SMSG_SPELL_PREPARE + SMSG_SPELL_START pairs.
+            // Key = client_spell_id (authoritative SpellID from SPELL_START).
+            // Value = (serverCastSpell, visualId, castFlags, count).
+            var substitutions = new Dictionary<int, (int serverCast, int visualId, int castFlags, int count)>();
+
+            // Pending SPELL_PREPARE records: ServerCastGuid (hex) -> (provisional clientId, serverCastEntry)
+            // clientId is overridden by the SpellID in the matching SMSG_SPELL_START.
+            // serverCastEntry is the ServerCastID GUID Entry decoded by WPP (informational hint).
+            var pendingPrepares = new Dictionary<string, (int clientId, int serverCastEntry)>(StringComparer.Ordinal);
+
             // Proc-chain inference needs casts in memory before flush — keep a sliding window
             // of the last few hundred casts (by session timestamp) to match triggered casts.
             var castWindow = new List<SniffSpellCast>(ProcWindowSize * 2);
@@ -67,7 +81,7 @@ namespace SpellWork.Database
 
             // Running totals for result
             int packetCount = 0, castsIns = 0, aurasIns = 0, dmgIns = 0,
-                healIns = 0, enIns = 0, perIns = 0;
+                healIns = 0, enIns = 0, perIns = 0, subObs = 0;
             var affectedSpells = new HashSet<int>();
 
             // Epoch for relative timestamps
@@ -162,6 +176,57 @@ namespace SpellWork.Database
                             }
                             break;
                         }
+                        case "SMSG_SPELL_PREPARE":
+                        {
+                            // Store ServerCastID GUID for SPELL_START matching, plus the
+                            // GUID Entry hint for the server-side spell (informational).
+                            var sub = ParseSpellPrepare(fieldLines);
+                            if (sub.HasValue)
+                                pendingPrepares[sub.Value.serverGuid] = (sub.Value.clientId, sub.Value.serverCastEntry);
+                            break;
+                        }
+                        case "SMSG_SPELL_START":
+                        {
+                            // The only fields that matter: SpellID, SpellXSpellVisualID, CastFlags.
+                            // If CastID matches a pending SPELL_PREPARE ServerCastGuid, record the
+                            // full substitution entry using SpellID as the authoritative client spell.
+                            string? startCastGuid = null;
+                            int     startSpellId  = 0;
+                            int     startVisualId = 0;
+                            int     startCastFlags = 0;
+                            foreach (string fLine in fieldLines)
+                            {
+                                string t = StripLinePrefixes(fLine.Trim());
+                                if (t.StartsWith("CastID:", StringComparison.Ordinal))
+                                {
+                                    ParseGuid(GetValue(t), out _, out string sg);
+                                    if (sg.Length > 0) startCastGuid = sg;
+                                }
+                                else if (TryGetTaggedInt(t, "SpellID",              out int sid))  startSpellId   = sid;
+                                else if (TryGetTaggedInt(t, "SpellXSpellVisualID",  out int vis))  startVisualId  = vis;
+                                else if (TryGetTaggedInt(t, "CastFlags",            out int cf))   startCastFlags = cf;
+                            }
+                            if (startCastGuid != null && startSpellId != 0
+                                && pendingPrepares.TryGetValue(startCastGuid, out var pending))
+                            {
+                                pendingPrepares.Remove(startCastGuid);
+                                if (substitutions.TryGetValue(startSpellId, out var existing))
+                                {
+                                    // Keep the most-observed visual/flags; increment count.
+                                    substitutions[startSpellId] = (
+                                        pending.serverCastEntry != 0 ? pending.serverCastEntry : existing.serverCast,
+                                        startVisualId  != 0 ? startVisualId  : existing.visualId,
+                                        startCastFlags != 0 ? startCastFlags : existing.castFlags,
+                                        existing.count + 1);
+                                }
+                                else
+                                {
+                                    substitutions[startSpellId] = (pending.serverCastEntry, startVisualId, startCastFlags, 1);
+                                }
+                                subObs++;
+                            }
+                            break;
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -237,22 +302,24 @@ namespace SpellWork.Database
             if (heals.Count     > 0) SpellForgeSniffsDb.BulkInsertHealEvents(sessionId, heals);
             if (energizes.Count > 0) SpellForgeSniffsDb.BulkInsertEnergizeEvents(sessionId, energizes);
             if (periodics.Count > 0) SpellForgeSniffsDb.BulkInsertPeriodicEvents(sessionId, periodics);
+            if (substitutions.Count > 0) SpellForgeSniffsDb.UpsertSpellSubstitutions(substitutions);
 
             SpellForgeSniffsDb.UpdateSessionPacketCount(sessionId, packetCount);
             SpellForgeSniffsDb.RefreshSummaryForSpells(affectedSpells);
 
             return new SniffImportResult
             {
-                Success                 = true,
-                SessionId               = sessionId,
-                PacketsParsed           = packetCount,
-                CastsInserted           = castsIns,
-                AuraEventsInserted      = aurasIns,
-                DamageEventsInserted    = dmgIns,
-                HealEventsInserted      = healIns,
-                EnergizeEventsInserted  = enIns,
-                PeriodicEventsInserted  = perIns,
-                AffectedSpellIds        = new List<int>(affectedSpells),
+                Success                  = true,
+                SessionId                = sessionId,
+                PacketsParsed            = packetCount,
+                CastsInserted            = castsIns,
+                AuraEventsInserted       = aurasIns,
+                DamageEventsInserted     = dmgIns,
+                HealEventsInserted       = healIns,
+                EnergizeEventsInserted   = enIns,
+                PeriodicEventsInserted   = perIns,
+                SubstitutionObservations = subObs,
+                AffectedSpellIds         = new List<int>(affectedSpells),
             };
         }
 
@@ -622,8 +689,7 @@ namespace SpellWork.Database
         }
 
         // SMSG_SPELL_PERIODIC_AURA_LOG
-        // TargetGUID, CasterGUID, SpellID
-        // PeriodicAuraLogEffectData [0]: { Effect, Amount, OriginalDamage, OverHealOrKill,
+        // TargetGUID, CasterGUID, SpellID        // PeriodicAuraLogEffectData [0]: { Effect, Amount, OriginalDamage, OverHealOrKill,
         //   SchoolMaskOrPower, AbsorbedOrAmplitude, Resisted, Crit }
         private static SniffPeriodicEvent? ParsePeriodicAuraLog(
             int sessionId, int packetNum, long tsMs, List<string> lines)
@@ -670,6 +736,35 @@ namespace SpellWork.Database
                 Absorbed     = absorbed,
                 IsCritical   = isCrit,
             };
+        }
+
+        // SMSG_SPELL_PREPARE
+        // Returns:
+        //   clientId        — ClientCastID GUID Entry (provisional talent spell ID).
+        //   serverCastEntry — ServerCastID GUID Entry: the underlying spell hint (e.g. 116).
+        //                     "It's just a GUID — you could skip the spell ID in it and nothing
+        //                     would change" — informational only; SpellID from SPELL_START wins.
+        //   serverGuid      — Raw ServerCastID hex GUID for matching against SMSG_SPELL_START CastID.
+        private static (int clientId, int serverCastEntry, string serverGuid)? ParseSpellPrepare(List<string> lines)
+        {
+            int     clientId        = 0;
+            int     serverCastEntry = 0;
+            string? serverGuid      = null;
+            foreach (string line in lines)
+            {
+                string t = line.Trim();
+                if (t.StartsWith("ClientCastID:", StringComparison.Ordinal))
+                    TryGetGuidEntry(GetValue(t), out clientId);
+                else if (t.StartsWith("ServerCastID:", StringComparison.Ordinal))
+                {
+                    string raw = GetValue(t);
+                    TryGetGuidEntry(raw, out serverCastEntry);
+                    ParseGuid(raw, out _, out string sg);
+                    if (sg.Length > 0) serverGuid = sg;
+                }
+            }
+            if (serverGuid == null) return null;
+            return (clientId, serverCastEntry, serverGuid);
         }
 
         // ------------------------------------------------------------------ //
@@ -830,11 +925,13 @@ namespace SpellWork.Database
         private static readonly HashSet<string> HandledOpcodes = new(StringComparer.Ordinal)
         {
             "SMSG_SPELL_GO",
+            "SMSG_SPELL_START",           // paired with SMSG_SPELL_PREPARE for talent spell detection
             "SMSG_AURA_UPDATE",
             "SMSG_SPELL_NON_MELEE_DAMAGE_LOG",
             "SMSG_SPELL_HEAL_LOG",
             "SMSG_SPELL_ENERGIZE_LOG",
             "SMSG_SPELL_PERIODIC_AURA_LOG",
+            "SMSG_SPELL_PREPARE",
         };
 
         private const int BatchFlush    = 500;
@@ -999,16 +1096,17 @@ namespace SpellWork.Database
     // ======================================================================
     public sealed class SniffImportResult
     {
-        public bool         Success                { get; init; }
-        public int          SessionId              { get; init; }
-        public int          PacketsParsed          { get; init; }
-        public int          CastsInserted          { get; init; }
-        public int          AuraEventsInserted     { get; init; }
-        public int          DamageEventsInserted   { get; init; }
-        public int          HealEventsInserted     { get; init; }
-        public int          EnergizeEventsInserted { get; init; }
-        public int          PeriodicEventsInserted { get; init; }
-        public string?      ErrorMessage           { get; init; }
-        public List<int>    AffectedSpellIds       { get; init; } = new();
+        public bool         Success                  { get; init; }
+        public int          SessionId                { get; init; }
+        public int          PacketsParsed            { get; init; }
+        public int          CastsInserted            { get; init; }
+        public int          AuraEventsInserted       { get; init; }
+        public int          DamageEventsInserted     { get; init; }
+        public int          HealEventsInserted       { get; init; }
+        public int          EnergizeEventsInserted   { get; init; }
+        public int          PeriodicEventsInserted   { get; init; }
+        public int          SubstitutionObservations { get; init; }
+        public string?      ErrorMessage             { get; init; }
+        public List<int>    AffectedSpellIds         { get; init; } = new();
     }
 }

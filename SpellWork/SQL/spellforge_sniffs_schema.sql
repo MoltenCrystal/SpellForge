@@ -181,6 +181,59 @@ ALTER TABLE `sniff_damage_events` MODIFY COLUMN `blocked`   INT NOT NULL DEFAULT
 ALTER TABLE `sniff_heal_events`   MODIFY COLUMN `absorbed`  INT NOT NULL DEFAULT 0;
 ALTER TABLE `sniff_periodic_events` MODIFY COLUMN `absorbed` INT NOT NULL DEFAULT 0;
 
+-- --------------------------------------------------------
+-- Spell prepare observations — one row per unique talent spell observed going
+-- through the SMSG_SPELL_PREPARE / SMSG_SPELL_START pair.
+--
+-- Fields that matter from the sniff:
+--   client_spell_id   — SpellID from SMSG_SPELL_START (the talent the player cast,
+--                       e.g. 431044 Frostfire Bolt).  Authoritative; comes from the
+--                       SpellID field, NOT from any GUID Entry.
+--   server_cast_spell — ServerCastID GUID Entry decoded by WPP (e.g. 116 Frostbolt).
+--                       Informational only — "it's just a guid, you could skip the
+--                       spell ID in it and nothing would change" — but it hints at
+--                       the underlying spell the server runs internally.
+--   visual_id         — SpellXSpellVisualID from SMSG_SPELL_START: the visual the
+--                       server used for this cast (what the client displays).
+--   cast_flags        — CastFlags from SMSG_SPELL_START.
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `sniff_spell_substitutions` (
+  `client_spell_id`   INT UNSIGNED NOT NULL COMMENT 'SpellID from SMSG_SPELL_START (talent spell, e.g. 431044)',
+  `server_cast_spell` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'ServerCastID GUID Entry hint (e.g. 116) — informational, not authoritative',
+  `visual_id`         INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'SpellXSpellVisualID from SMSG_SPELL_START',
+  `cast_flags`        INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CastFlags from SMSG_SPELL_START',
+  `observe_count`     INT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Number of SMSG_SPELL_PREPARE/SPELL_START pair observations',
+  PRIMARY KEY (`client_spell_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── Migrations for existing installs ────────────────────────────────────────
+-- EnsureSchema() swallows errors on non-critical statements, so it is safe for
+-- these to fail when the schema is already up to date.  Each ALTER is a
+-- separate statement so one failure never blocks the rest.
+
+-- From original schema (client_spell_id + server_spell_id composite PK):
+ALTER TABLE `sniff_spell_substitutions` DROP KEY `idx_server_spell_id`;
+ALTER TABLE `sniff_spell_substitutions` DROP COLUMN `server_spell_id`;
+
+-- From intermediate schema (spell_id single PK):
+ALTER TABLE `sniff_spell_substitutions`
+  CHANGE COLUMN `spell_id` `client_spell_id` INT UNSIGNED NOT NULL
+    COMMENT 'SpellID from SMSG_SPELL_START (talent spell, e.g. 431044)';
+
+-- Add new columns if missing.  Fails silently (via EnsureSchema) when already present:
+ALTER TABLE `sniff_spell_substitutions`
+  ADD COLUMN `server_cast_spell` INT UNSIGNED NOT NULL DEFAULT 0
+    COMMENT 'ServerCastID GUID Entry hint (e.g. 116) — informational, not authoritative'
+    AFTER `client_spell_id`;
+ALTER TABLE `sniff_spell_substitutions`
+  ADD COLUMN `visual_id` INT UNSIGNED NOT NULL DEFAULT 0
+    COMMENT 'SpellXSpellVisualID from SMSG_SPELL_START'
+    AFTER `server_cast_spell`;
+ALTER TABLE `sniff_spell_substitutions`
+  ADD COLUMN `cast_flags` INT UNSIGNED NOT NULL DEFAULT 0
+    COMMENT 'CastFlags from SMSG_SPELL_START'
+    AFTER `visual_id`;
+
 -- Recomputed by SniffImporter after each import batch.
 -- Fast primary-key lookup; avoids aggregation at query time.
 -- --------------------------------------------------------

@@ -982,6 +982,32 @@ namespace SpellWork.Forms
                 if (!allRelated.Any(x => x.ID == s.ID) && s.ID != node.ActiveSpellId)
                     allRelated.Add(s);
 
+            // ── Inline $<spellId> cross-references in description / tooltip text ──────
+            // Patterns like $205708s1 directly embed a spell ID to pull a value from.
+            // These spells must be included as related even when not triggered in DBC
+            // and even when their name does not appear in the description text.
+            var descInlineRefs = new HashSet<int>();
+            if (talentSpell != null)
+            {
+                var spellsToScan = new List<SpellInfo> { talentSpell };
+                spellsToScan.AddRange(dbcTriggered);
+                spellsToScan.AddRange(sniffRelated);
+                foreach (var sp in spellsToScan)
+                {
+                    foreach (var text in new[] { sp.Description, sp.Tooltip })
+                    {
+                        if (string.IsNullOrEmpty(text)) continue;
+                        foreach (Match m in Regex.Matches(text, @"\$(\d+)[a-zA-Z]"))
+                            if (int.TryParse(m.Groups[1].Value, out var refId) && refId != node.ActiveSpellId)
+                                descInlineRefs.Add(refId);
+                    }
+                }
+                foreach (var refId in descInlineRefs)
+                    if (DBC.DBC.SpellInfoStore.TryGetValue(refId, out var refSp) &&
+                        !allRelated.Any(x => x.ID == refSp.ID))
+                        allRelated.Add(refSp);
+            }
+
             if (allRelated.Count > 0)
             {
                 sb.AppendLine();
@@ -992,14 +1018,13 @@ namespace SpellWork.Forms
                     bool isDbcTrigger = dbcTriggered.Any(x => x.ID == s.ID);
                     bool isSniff      = sniffRelated.Any(x => x.ID == s.ID);
 
-                    // Try to determine if the spell name appears in the talent description
-                    bool isDescRef = false;
-                    if (talentSpell != null && !string.IsNullOrEmpty(s.Name))
-                    {
-                        var descText = string.Concat(talentSpell.Description, " ", talentSpell.Tooltip);
-                        isDescRef = !isDbcTrigger &&
-                                    descText.Contains(s.Name, StringComparison.OrdinalIgnoreCase);
-                    }
+                    // A spell is a description reference if its ID appears inline as $<spellId>
+                    // in any description/tooltip text, or if its name appears in the talent description.
+                    bool isDescRef = !isDbcTrigger && (
+                        descInlineRefs.Contains(s.ID) ||
+                        (talentSpell != null && !string.IsNullOrEmpty(s.Name) &&
+                         string.Concat(talentSpell.Description, " ", talentSpell.Tooltip)
+                               .Contains(s.Name, StringComparison.OrdinalIgnoreCase)));
 
                     // Detect summon-creature spells: they are sniff spells whose name does
                     // not appear in the description and have no DBC trigger link — they were
@@ -1244,13 +1269,23 @@ namespace SpellWork.Forms
                 return null;
 
             static string ToPascal(string name) =>
-                string.Concat(name.Split(new[] { ' ', '_', '-' }, StringSplitOptions.RemoveEmptyEntries)
+                string.Concat(name.Replace("'", "")
+                                  .Split(new[] { ' ', '_', '-' }, StringSplitOptions.RemoveEmptyEntries)
                                   .Select(w => char.ToUpperInvariant(w[0]) + w.Substring(1).ToLower()));
 
             var classFolder = ToPascal(_selectedClass);
-            var specFolder  = ToPascal(_selectedSpec);
 
-            var targetDir = Path.Combine(sqlBase, "Spells", classFolder, specFolder);
+            // Determine if this node belongs to the hero-talent tree or the spec tree.
+            // Use reference equality — HitTest returns the exact TalentNode object from
+            // _trees, so this is safe and avoids false matches when cell IDs repeat across
+            // the class/hero/spec trees (which they do — cell IDs are per-tree, not global).
+            var ownerTree = _trees.FirstOrDefault(t => t.Nodes.Contains(node));
+            bool isHeroTree = ownerTree != null &&
+                              !string.IsNullOrEmpty(_selectedHero) &&
+                              string.Equals(ownerTree.Name, _selectedHero, StringComparison.OrdinalIgnoreCase);
+            var subFolder = isHeroTree ? ToPascal(_selectedHero) : ToPascal(_selectedSpec);
+
+            var targetDir = Path.Combine(sqlBase, "Spells", classFolder, subFolder);
             Directory.CreateDirectory(targetDir);
 
             var fileName = $"spell_wsp_{safeClass}_{safeTalent}.sql";
@@ -1258,9 +1293,10 @@ namespace SpellWork.Forms
 
             if (!File.Exists(fullPath))
             {
+                var treeLabel = isHeroTree ? $"HeroTalent: {_selectedHero}" : $"Spec: {_selectedSpec}";
                 var header = $"-- WorldsoulPvP Spell Implementation\n" +
                              $"-- Spell: {node.ActiveName} (ID: {node.ActiveSpellId})\n" +
-                             $"-- Class: {_selectedClass} | Spec: {_selectedSpec}\n" +
+                             $"-- Class: {_selectedClass} | {treeLabel}\n" +
                              $"-- Generated by SpellForge {DateTime.Now:yyyy-MM-dd}\n";
                 File.WriteAllText(fullPath, header);
             }

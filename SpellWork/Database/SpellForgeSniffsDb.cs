@@ -177,6 +177,15 @@ namespace SpellWork.Database
             public DateTime LastUpdated      { get; init; }
         }
 
+        public sealed class SniffSpellSubstitution
+        {
+            public int SpellId         { get; init; }   // client_spell_id  (authoritative, from SPELL_START SpellID)
+            public int ServerCastSpell { get; init; }   // server_cast_spell (GUID Entry hint, informational)
+            public int VisualId        { get; init; }   // SpellXSpellVisualID
+            public int CastFlags       { get; init; }   // CastFlags
+            public int ObserveCount    { get; init; }
+        }
+
         #endregion
 
         // ------------------------------------------------------------------ //
@@ -232,8 +241,29 @@ namespace SpellWork.Database
                     }
                     if (allComments) continue;
 
-                    using var cmd = new MySqlCommand(stmt, conn);
-                    cmd.ExecuteNonQuery();
+                    // Determine whether this statement is load-bearing (CREATE DATABASE / USE /
+                    // CREATE TABLE).  These must succeed; fail fast if they don't.
+                    // ALTER TABLE migrations are best-effort: they may fail harmlessly when the
+                    // schema is already up to date or when the MySQL version doesn't support a
+                    // particular IF EXISTS sub-clause syntax — never abort initialisation for them.
+                    bool isCritical = stmt.StartsWith("CREATE DATABASE", StringComparison.OrdinalIgnoreCase)
+                                   || stmt.StartsWith("USE ",            StringComparison.OrdinalIgnoreCase)
+                                   || stmt.StartsWith("CREATE TABLE",    StringComparison.OrdinalIgnoreCase);
+
+                    if (isCritical)
+                    {
+                        using var cmd = new MySqlCommand(stmt, conn);
+                        cmd.ExecuteNonQuery();   // propagates exception → caller sees false
+                    }
+                    else
+                    {
+                        try
+                        {
+                            using var cmd = new MySqlCommand(stmt, conn);
+                            cmd.ExecuteNonQuery();
+                        }
+                        catch { /* migration already applied or unsupported syntax — ignore */ }
+                    }
                 }
                 return true;
             }
@@ -720,6 +750,111 @@ LEFT JOIN (
                         IsPeriodic   = r.GetBoolean(14),
                         IsCritical   = r.GetBoolean(15),
                     });
+            }
+            catch { }
+            return list;
+        }
+
+        // ------------------------------------------------------------------ //
+        // Spell substitutions
+        // ------------------------------------------------------------------ //
+
+        /// <summary>
+        /// Upserts SMSG_SPELL_PREPARE observations from a single import run.
+        /// Key = client_spell_id (SpellID from SMSG_SPELL_START — authoritative).
+        /// Value = (serverCastSpell from ServerCastID GUID Entry, visualId, castFlags, count).
+        /// </summary>
+        public static void UpsertSpellSubstitutions(
+            Dictionary<int, (int serverCast, int visualId, int castFlags, int count)> spellData)
+        {
+            if (spellData.Count == 0) return;
+            var rows = new System.Text.StringBuilder();
+            bool first = true;
+            foreach (var kv in spellData)
+            {
+                if (!first) rows.Append(',');
+                rows.Append($"({kv.Key},{kv.Value.serverCast},{kv.Value.visualId},{kv.Value.castFlags},{kv.Value.count})");
+                first = false;
+            }
+            string sql = "INSERT INTO `sniff_spell_substitutions` " +
+                         "(`client_spell_id`,`server_cast_spell`,`visual_id`,`cast_flags`,`observe_count`) VALUES " +
+                         rows +
+                         " ON DUPLICATE KEY UPDATE" +
+                         " `server_cast_spell` = IF(VALUES(`server_cast_spell`)!=0, VALUES(`server_cast_spell`), `server_cast_spell`)," +
+                         " `visual_id`         = IF(VALUES(`visual_id`)!=0,         VALUES(`visual_id`),         `visual_id`)," +
+                         " `cast_flags`        = IF(VALUES(`cast_flags`)!=0,        VALUES(`cast_flags`),        `cast_flags`)," +
+                         " `observe_count`     = `observe_count` + VALUES(`observe_count`)";
+            try
+            {
+                using var conn = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
+                conn.Open();
+                using var cmd = new MySqlCommand(sql, conn);
+                cmd.ExecuteNonQuery();
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Returns the SMSG_SPELL_PREPARE observation record for <paramref name="spellId"/>,
+        /// or null if this spell was never seen going through SPELL_PREPARE.
+        /// </summary>
+        public static SniffSpellSubstitution? GetSpellPrepareEntry(int spellId)
+        {
+            try
+            {
+                using var conn = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
+                conn.Open();
+                using var cmd = new MySqlCommand(
+                    "SELECT `client_spell_id`,`server_cast_spell`,`visual_id`,`cast_flags`,`observe_count` " +
+                    "FROM `sniff_spell_substitutions` WHERE `client_spell_id`=@id", conn);
+                cmd.Parameters.AddWithValue("@id", spellId);
+                using var r = cmd.ExecuteReader();
+                if (r.Read())
+                    return new SniffSpellSubstitution
+                    {
+                        SpellId         = r.GetInt32(0),
+                        ServerCastSpell = r.GetInt32(1),
+                        VisualId        = r.GetInt32(2),
+                        CastFlags       = r.GetInt32(3),
+                        ObserveCount    = r.GetInt32(4),
+                    };
+            }
+            catch { }
+            return null;
+        }
+
+        // Legacy shim — kept for any callers that haven't been updated yet.
+        public static List<SniffSpellSubstitution> GetSubstitutionsForClientSpell(int spellId)
+        {
+            var entry = GetSpellPrepareEntry(spellId);
+            return entry != null ? new List<SniffSpellSubstitution> { entry } : new List<SniffSpellSubstitution>();
+        }
+
+        // Legacy shim — server_spell_id concept no longer exists; always returns empty.
+        public static List<SniffSpellSubstitution> GetSubstitutionsForServerSpell(int spellId)
+            => new List<SniffSpellSubstitution>();
+
+        /// <summary>
+        /// Returns the top spell IDs that were triggered by <paramref name="parentSpellId"/>
+        /// according to <c>sniff_spell_casts.triggered_by_spell_id</c>.
+        /// Result is ordered by observation count descending.
+        /// </summary>
+        public static List<(int SpellId, int Count)> GetSpellsTriggeredBy(int parentSpellId, int limit = 10)
+        {
+            var list = new List<(int, int)>();
+            try
+            {
+                using var conn = new MySql.Data.MySqlClient.MySqlConnection(ConnStr);
+                conn.Open();
+                using var cmd = new MySqlCommand(
+                    "SELECT `spell_id`, COUNT(*) AS cnt " +
+                    "FROM `sniff_spell_casts` WHERE `triggered_by_spell_id`=@id " +
+                    "GROUP BY `spell_id` ORDER BY cnt DESC LIMIT @lim", conn);
+                cmd.Parameters.AddWithValue("@id",  parentSpellId);
+                cmd.Parameters.AddWithValue("@lim", limit);
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                    list.Add((r.GetInt32(0), r.GetInt32(1)));
             }
             catch { }
             return list;
